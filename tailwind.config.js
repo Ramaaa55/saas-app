@@ -1,18 +1,15 @@
-
-
-const { default: daisyui } = require('daisyui');
-const { plugin } = require('daisyui/functions/plugin');
-const { default: themes } = require('daisyui/theme/object');
-
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  content: [],
+  content: [
+    "./app/**/*.{js,ts,jsx,tsx}",       // Next.js app directory
+    "./pages/**/*.{js,ts,jsx,tsx}",     // Optional: for pages/ folder
+    "./components/**/*.{js,ts,jsx,tsx}",// Your shared UI components
+  ],
   theme: {
-    extend: {},
+    extend: {},                         // Customize your theme here
   },
-  plugins: [require("daisyui")],
+  plugins: [require("daisyui")],        // DaisyUI plugin included
   daisyui: {
-    themes: ["retro", "cupcake", "cyberpunk"],
+    themes: ["retro", "cupcake", "cyberpunk"], // Your active themes
   },
 };
-

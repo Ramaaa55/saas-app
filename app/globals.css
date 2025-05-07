@@ -1,6 +1,9 @@
-@import "tailwindcss/preflight";
+@tailwind base;
+@tailwind components;
 @tailwind utilities;
-@plugin "daisyui";
+@plugin "daisyui" {
+  themes: light --default, dark --prefersdark, retro;
+}
 
 
 
