@@ -6,10 +6,11 @@ module.exports = {
     "./components/**/*.{js,ts,jsx,tsx}",// Your shared UI components
   ],
   theme: {
-    extend: {},                         // Customize your theme here
+    extend: {
+      fontWeight: {
+        bold: '700', // Explicitly define 'bold' as 700 if needed
+      },
+    },                         
   },
-  plugins: [require("daisyui")],        // DaisyUI plugin included
-  daisyui: {
-    themes: ["retro", "cupcake", "cyberpunk"], // Your active themes
-  },
+   plugins: [require("daisyui")],      // DaisyUI plugin included
 };
