@@ -15,10 +15,7 @@ export default function Home() {
   "Feature 3",
   "Feature 4",
  ];
-
-  
-  
-
+ 
 
   return (
    <main>
