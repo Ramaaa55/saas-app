@@ -3,11 +3,14 @@ import ListItem from "@/components/ListItems";
 import FAQListItem from "@/components/FAQListItem";
 import Image from "next/image";
 import productDemo from "./productDemo.jpeg"
+import { auth } from "@/auth";
+
+export default async function Home() {
 
 
-export default function Home() {
-  const isLoggedIn = true;
-  const name = "Ramiro";
+  const session = await auth()
+  console.log();
+  
 
  const pricingFeaturesList = [
   "Feature 1",
@@ -28,7 +31,7 @@ export default function Home() {
         <a className="link link-hover" href="#FAQ">FAQ</a>
       </div>
       <div>
-        <ButtonLogin isLoggedIn={isLoggedIn} name={name} />
+        <ButtonLogin session={session} />
       </div>
      </div>  
     </section>
@@ -41,7 +44,7 @@ export default function Home() {
       <h1 className="text-4xl lg:text-5xl font-extrabold mb-6"> Turn Your Ideas Into Smart, Stunning Concept Maps — Instantly </h1>
       <div className="opacity-90 mb-10"> Instantly turn any text into a clear, AI-powered concept map — fast, smart, and effortless. </div>
 
-      <ButtonLogin isLoggedIn={isLoggedIn} name={name} />
+      <ButtonLogin session={session} />
     </div>
     
     </section>
@@ -74,7 +77,7 @@ export default function Home() {
             
           </ul>
 
-          <ButtonLogin isLoggedIn={isLoggedIn} name={name} extraStyle="w-full" />
+          <ButtonLogin session={session} extraStyle="w-full" />
         </div>
       </div>
     </section>
