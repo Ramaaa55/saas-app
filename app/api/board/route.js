@@ -26,12 +26,13 @@ export async function POST(req){
 
         await connectMongo();
 
-
+        console.log('API received content:', body.content);
         const user = await User.findById(session.user.id);
 
         const board = await Board.create({
             userId: user._id,
             name: body.name,
+            content: body.content,
         });
         
         user.boards.push(board._id);
@@ -73,7 +74,7 @@ export async function DELETE(req){
 
         const user = await User.findById(session?.user?.id);
         user.boards = user.boards.filter((id) => id.toString() !== boardId);
-
+        await user.save();
 
     } catch (e){
         return NextResponse.json({ error: e.message }, { status: 500}); 

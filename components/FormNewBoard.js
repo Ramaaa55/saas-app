@@ -1,59 +1,92 @@
 "use client";
 
 import { useState } from "react";
-import axios from "axios";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
+import { generateConceptMap, saveConceptMap } from "@/services/conceptMapGenerator";
+import { useSession } from "next-auth/react";
 
+/**
+ * FormNewBoard Component
+ * Handles the creation of new concept maps
+ * Features:
+ * - Form validation
+ * - Loading states
+ * - Error handling
+ * - Success notifications
+ * - Automatic page refresh after creation
+ */
 const FormNewBoard = () => {
     const router = useRouter();
-    const [name, setName] = useState("");
+    const { data: session } = useSession();
+    const [text, setText] = useState("");
     const [isLoading, setIsLoading] = useState(false);
 
+    /**
+     * Handles form submission:
+     * 1. Prevents default form behavior
+     * 2. Validates loading state
+     * 3. Generates concept map from text
+     * 4. Saves the concept map
+     * 5. Shows success/error toast
+     * 6. Resets form and refreshes page
+     */
     const handleSubmit = async (event) => {
         event.preventDefault();
 
-        if (isLoading) {
+        if (isLoading || !text.trim()) {
             return;
         }
 
         setIsLoading(true);
 
         try {
-            const data = await axios.post("/api/board", { name });
-
-            
-            setName("");
-
-            toast.success("Board created!");
-
+            // Generate the concept map
+            const conceptMap = await generateConceptMap(text);
+            console.log('Generated conceptMap:', conceptMap);
+            // Save the concept map
+            const saveResult = await saveConceptMap(conceptMap, session.user.id);
+            console.log('Save result:', saveResult);
+            setText("");
+            toast.success("Concept map created successfully!");
             router.refresh();
-
         } catch (error) {
-            const errorMessage = error.response?.data?.error || error.message || "Someting went wrong"
-
-            toast.error(errorMessage); 
+            const errorMessage = error.message || "Something went wrong";
+            toast.error(errorMessage);
         } finally {
             setIsLoading(false);
         }
-
-
     };
 
     return (
-    <form className="bg-base-100 p-8 rounded-3xl space-y-8"
-        onSubmit={handleSubmit}
-
-    >
-        <p className="font-bold text-lg">Create a new feedback board</p>
-        <input required type="text" placeholder="Type here" className="input" value={name} onChange={(event) => {
-            const newName = event.target.value;
-            setName(newName);
-        }} />
-    
-     <button className="btn btn-primary btn-block" type="submit">{isLoading && <span className="loading loading-spinner loading-xs"></span>}Create Board</button>
-    </form>    
-   );
+        <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Text area for concept map input */}
+            <div className="form-control">
+                <textarea
+                    required
+                    placeholder="Paste your text here..."
+                    className="textarea textarea-bordered w-full h-32"
+                    value={text}
+                    onChange={(event) => setText(event.target.value)}
+                />
+            </div>
+            {/* Submit button with loading state */}
+            <button 
+                className="btn btn-primary w-full" 
+                type="submit"
+                disabled={isLoading}
+            >
+                {isLoading ? (
+                    <>
+                        <span className="loading loading-spinner loading-sm"></span>
+                        Generating Concept Map...
+                    </>
+                ) : (
+                    "Generate Map"
+                )}
+            </button>
+        </form>
+    );
 };
 
-    export default FormNewBoard;
+export default FormNewBoard;
