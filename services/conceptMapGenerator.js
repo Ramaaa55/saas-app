@@ -5,9 +5,10 @@
  */
 
 import axios from 'axios';
+import nlp from 'compromise';
 
 // DeepSeek API configuration
-const DEEPSEEK_API_KEY = 'sk-96a7994b00d646809acf5e17fc63ce74';
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || 'sk-96a7994b00d646809acf5e17fc63ce74';
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
 
 // Language detection configuration
@@ -40,51 +41,71 @@ const EMOJI_MAPPING = {
 };
 
 /**
- * Cleans and parses JSON from markdown-formatted text or arbitrary string
- * @param {string} text - Text that might contain markdown-formatted JSON or extraneous characters
- * @returns {Object|Array} Parsed JSON object or array
+ * Parses JSON from markdown content, handling various formats and edge cases
+ * @param {string} content - The content to parse
+ * @returns {Array} Parsed JSON array
  */
-function parseJsonFromMarkdown(text) {
+function parseJsonFromMarkdown(content) {
     try {
-        // Aggressively find the JSON array part by searching for the first '[' and last ']'
-        const startIndex = text.indexOf('[');
-        const endIndex = text.lastIndexOf(']');
-
-        if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
-            const jsonString = text.substring(startIndex, endIndex + 1);
-            return JSON.parse(jsonString);
-        } 
+        // First, try direct JSON parse
+        return JSON.parse(content);
+    } catch (e) {
+        console.log('Direct parse failed, attempting to extract JSON from markdown');
         
-        // Fallback for cases where markdown block might be present but delimiters are missed, or pure JSON without delimiters
-        const jsonBlockMatch = text.match(/```json\n([\s\S]*?)\n```/);
-        if (jsonBlockMatch && jsonBlockMatch[1]) {
-            return JSON.parse(jsonBlockMatch[1].trim());
+        try {
+            // Try to extract JSON from markdown code blocks
+            const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+            if (jsonMatch) {
+                const jsonContent = jsonMatch[1].trim();
+                return JSON.parse(jsonContent);
+            }
+            
+            // If no code block, try to find JSON array directly
+            const arrayMatch = content.match(/\[\s*\{[\s\S]*\}\s*\]/);
+            if (arrayMatch) {
+                return JSON.parse(arrayMatch[0]);
+            }
+            
+            // If still no match, try to clean the content and parse
+            const cleanedContent = content
+                .replace(/```json\n?/g, '')
+                .replace(/```\n?/g, '')
+                .replace(/\\n/g, ' ')
+                .replace(/\n/g, ' ')
+                .trim();
+            
+            return JSON.parse(cleanedContent);
+        } catch (parseError) {
+            console.error('Failed to parse JSON from markdown:', parseError);
+            console.error('Problematic content:', content);
+            throw new Error('Invalid JSON format from API');
         }
-
-        // Last resort: try to parse the entire text as JSON directly
-        return JSON.parse(text.trim());
-
-    } catch (error) {
-        console.error('Failed to parse JSON from text after all attempts:', error);
-        throw new Error('Invalid JSON format from API'); // Throw a specific error for debugging
     }
 }
 
 /**
  * Detects the language of the input text
  * @param {string} text - Input text to analyze
- * @returns {Promise<string>} Detected language code
+ * @returns {string} 'en' for English, 'es' for Spanish
  */
-async function detectLanguage(text) {
-    try {
-        const response = await axios.post(LANGDETECT_API_URL, {
-            text: text
-        });
-        return response.data.language;
-    } catch (error) {
-        console.warn('Language detection failed, defaulting to English:', error);
-        return 'en';
-    }
+function detectLanguage(text) {
+    // Common Spanish words and patterns
+    const spanishPatterns = [
+        /\b(el|la|los|las|un|una|unos|unas)\b/i,
+        /\b(es|son|está|están|fue|fueron)\b/i,
+        /\b(para|por|con|sin|sobre|bajo)\b/i,
+        /\b(que|qué|cómo|cuándo|dónde|quién)\b/i,
+        /\b(y|o|pero|porque|si|aunque)\b/i,
+        /[áéíóúñ¿¡]/i
+    ];
+
+    // Count Spanish indicators
+    const spanishScore = spanishPatterns.reduce((score, pattern) => {
+        return score + (text.match(pattern) || []).length;
+    }, 0);
+
+    // If we find enough Spanish indicators, return Spanish
+    return spanishScore >= 3 ? 'es' : 'en';
 }
 
 /**
@@ -162,18 +183,76 @@ function boldKeyTerms(text) {
 async function analyzeWithDeepSeek(text) {
     try {
         // Detect language first
-        const language = await detectLanguage(text);
+        const language = detectLanguage(text);
         
+        if (!DEEPSEEK_API_KEY) {
+            console.error('DeepSeek API key is missing');
+            return createBasicConcepts(text);
+        }
+
+        const systemPrompt = `You are an expert at creating visually appealing, semantically rich, and knowledge-dense concept maps. Your task is to analyze the user's input (in ${language}) and generate a concept map that combines aesthetic precision with informational depth.
+
+🎯 **CORE REQUIREMENTS (MUST-DO for each generated concept map):**
+
+1.  ✅ **Visual Aesthetics**:
+    - Use strategic emojis (1-2 per branch) as visual signposts
+    - Apply visual hierarchy through text formatting
+    - Avoid raw Markdown syntax in output
+    - Use uppercase for main concepts
+    - Format: "🎯 MAIN CONCEPT<br><small>Supporting details</small><br>- Key point 1<br>- Key point 2"
+
+2.  ✅ **Rich Node Content**:
+    - Each node MUST contain specific, detailed information
+    - Include concrete examples and timeframes
+    - Use bullet points for organized lists
+    - Add contextual information
+    - Format: "🎯 MAIN CONCEPT<br><small>Brief context</small><br>- Specific example 1<br>- Specific example 2"
+
+3.  ✅ **Semantic Structure**:
+    - Maintain clear hierarchy (general → specific)
+    - Follow implicit chronology when applicable
+    - Group related concepts logically
+    - Limit cross-links to distinct relationships
+    - Maximum 7 nodes total for clarity
+
+4.  ✅ **Language and Formatting**:
+    - ALL content in ${language === 'es' ? 'Spanish' : 'English'}
+    - Use uppercase for main concepts
+    - Use <small> for supporting details
+    - Add strategic emojis for context
+    - Use <br> for line breaks and bullet points
+
+Your response MUST be a JSON array of objects, and ONLY the JSON array. Each object MUST have:
+- 'id': Unique string identifier (e.g., "concept1")
+- 'text': Formatted concept label with emoji and styling
+- 'type': 'main', 'sub', or 'detail' (based on hierarchy)
+- 'definition': Rich, self-contained explanation with proper formatting
+- 'connections': Array of objects with 'targetId' and specific 'label' (maximum 3)
+
+Example of a visually appealing concept in ${language === 'es' ? 'Spanish' : 'English'}:
+{
+  "id": "concept1",
+  "text": "${language === 'es' ? '🎤 LUIS A. SPINETTA<br><small>Músico y poeta argentino (1950–2012)</small>' : '🎤 LUIS A. SPINETTA<br><small>Argentine musician and poet (1950–2012)</small>'}",
+  "type": "main",
+  "definition": "${language === 'es' ? 'Fundador del rock argentino y pionero del rock progresivo:<br>- _Nacido en_ 1950 en Buenos Aires<br>- _Formó_ la banda Almendra en 1967<br>- _Influenciado por_ la poesía de Rimbaud<br>- _Compuso_ más de 400 canciones<br>- _Ejemplo:_ "Muchacha ojos de papel" (1969)' : 'Founder of Argentine rock and pioneer of progressive rock:<br>- _Born in_ 1950 in Buenos Aires<br>- _Formed_ the band Almendra in 1967<br>- _Influenced by_ Rimbaud\'s poetry<br>- _Composed_ over 400 songs<br>- _Example:_ "Muchacha ojos de papel" (1969)'}",
+  "connections": [
+    {"targetId": "concept2", "label": "${language === 'es' ? 'formó parte de' : 'was part of'}"},
+    {"targetId": "concept3", "label": "${language === 'es' ? 'influenciado por' : 'influenced by'}"}
+  ]
+}
+
+Ensure each node is visually appealing and contains rich, specific information. Avoid raw Markdown syntax and use strategic emojis.`;
+
         const response = await axios.post(DEEPSEEK_API_URL, {
             model: "deepseek-chat",
             messages: [
                 {
                     role: "system",
-                    content: `You are an expert at analyzing text and extracting key concepts, their hierarchical relationships, and brief, self-contained definitions. Focus on deep reasoning and comprehension to infer related concepts and structure. The input text is in ${language}. Your response MUST be a JSON array of objects, and ONLY the JSON array. Do NOT include ANY other text, conversational elements, explanations, or markdown formatting (like \`\`\`json) before or after the JSON array. Each object in the array represents a concept and MUST have the following properties: 'id' (a unique string identifier for the concept), 'text' (the concept label, clear, concise, and self-contained), 'type' ('main' for the central concept, 'sub' for related concepts), 'definition' (a brief definition derived from the text, clear and self-contained), and 'connections' (an array of objects, each with 'targetId' referencing the id of a related concept, and 'label' describing the relationship). Ensure all concepts are connected and form a coherent hierarchical map. Avoid incomplete phrases or grammatical errors.`
+                    content: systemPrompt
                 },
                 {
                     role: "user",
-                    content: `Analyze this text and extract a hierarchical concept map with definitions and relationships: ${text}`
+                    content: `Generate a detailed, explanatory concept map in ${language === 'es' ? 'Spanish' : 'English'} from this text: ${text}`
                 }
             ]
         }, {
@@ -189,21 +268,53 @@ async function analyzeWithDeepSeek(text) {
         
         try {
             // Attempt to parse the content directly or robustly extract JSON
-            const concepts = parseJsonFromMarkdown(content); // Use the robust parser
+            const concepts = parseJsonFromMarkdown(content);
             
-            // Enhance concepts with emojis and bold terms
-            return concepts.map(concept => ({
-                ...concept,
-                text: addEmoji(boldKeyTerms(concept.text), concept.type),
-                definition: boldKeyTerms(concept.definition || '')
-            }));
+            // Post-process concepts to ensure they meet our requirements
+            const processedConcepts = concepts.map(concept => {
+                // Ensure definition is rich and informative
+                if (!concept.definition || concept.definition.length < 100) {
+                    concept.definition = `${concept.definition || ''}\n- _Add more context and explanation_\n- _Include key details and relationships_\n- _Provide specific examples or applications_`;
+                }
+                
+                // Ensure text has proper formatting
+                if (!concept.text.includes('<small>')) {
+                    concept.text = `${concept.text}<br><small>${language === 'es' ? 'Concepto principal' : 'Main concept'}</small>`;
+                }
+                
+                // Limit connections to 3 most important ones
+                if (concept.connections && concept.connections.length > 3) {
+                    concept.connections = concept.connections.slice(0, 3);
+                }
+                
+                return {
+                    ...concept,
+                    text: addEmoji(boldKeyTerms(concept.text), concept.type),
+                    definition: boldKeyTerms(concept.definition || '')
+                };
+            });
+            
+            return processedConcepts;
         } catch (parseError) {
             console.error('Failed to process DeepSeek response:', parseError);
             console.error('Problematic content:', content);
-            return createBasicConcepts(text); // Ensure fallback on any parsing error
+            return createBasicConcepts(text);
         }
     } catch (error) {
         console.error('DeepSeek API Error:', error);
+        if (error.response) {
+            console.error('Error response data:', error.response.data);
+            console.error('Error response status:', error.response.status);
+            console.error('Error response headers:', error.response.headers);
+            
+            if (error.response.status === 401) {
+                console.error('Authentication failed. Please check your API key.');
+            }
+        } else if (error.request) {
+            console.error('No response received:', error.request);
+        } else {
+            console.error('Error setting up request:', error.message);
+        }
         return createBasicConcepts(text);
     }
 }
@@ -246,93 +357,147 @@ async function validateConceptMap(conceptMap) {
 }
 
 /**
- * Generates a concept map from the input text
- * @param {string} text - The input text to generate the concept map from
- * @returns {Promise<Object>} The generated concept map structure
+ * Creates a Mermaid.js diagram from the processed concepts
+ * @param {Array} concepts - Array of processed concept objects
+ * @returns {string} Mermaid.js diagram syntax
  */
-export async function generateConceptMap(text) {
+function createMermaidDiagram(concepts) {
     try {
-        // 1. Deep Analysis with DeepSeek
-        const concepts = await analyzeWithDeepSeek(text);
+        // Start with graph TD for top-down layout
+        let diagram = 'graph TD\n';
+        
+        // Add nodes with rich content
+        concepts.forEach(concept => {
+            // Format the node content with proper line breaks and styling
+            const nodeContent = concept.text
+                .replace(/<br>/g, '\\n')
+                .replace(/<small>(.*?)<\/small>/g, '\\n<small>$1</small>')  // Preserve small text
+                .replace(/\*\*(.*?)\*\*/g, '$1')  // Remove raw bold
+                .replace(/_(.*?)_/g, '$1');       // Remove raw underline
+            
+            // Add the node with its formatted content
+            diagram += `  ${concept.id}["${nodeContent}"]\n`;
+        });
+        
+        // Add connections with meaningful labels
+        concepts.forEach(concept => {
+            if (concept.connections) {
+                concept.connections.forEach(conn => {
+                    // Only add connection if both nodes exist
+                    if (concepts.some(c => c.id === conn.targetId)) {
+                        diagram += `  ${concept.id} -->|"${conn.label}"| ${conn.targetId}\n`;
+                    }
+                });
+            }
+        });
+        
+        return diagram;
+    } catch (error) {
+        console.error('Error creating Mermaid diagram:', error);
+        return 'graph TD\n  Error["Error creating diagram"]';
+    }
+}
 
-        // Validate the API response structure
-        if (!Array.isArray(concepts) || concepts.length === 0) {
-            console.error('API did not return a valid array of concepts:', concepts);
-            return createBasicConcepts(text);
-        }
-
-        // 2. Create initial concept map structure
+/**
+ * Generates a concept map based on the provided user input.
+ * @param {string} input - The raw user input text.
+ * @returns {Promise<Object>} - The generated concept map object.
+ */
+export async function generateConceptMap(input) {
+    try {
+        // Process the input text using compromise for basic NLP
+        const doc = nlp(input);
+        
+        // Get key concepts (nouns and noun phrases)
+        const keyConcepts = doc.nouns().out('array');
+        
+        // Detect language
+        const language = detectLanguage(input);
+        
+        // Analyze the text using DeepSeek for deeper understanding
+        const concepts = await analyzeWithDeepSeek(input);
+        
+        // Validate the concept map
+        const validatedMap = await validateConceptMap({ concepts });
+        
+        // Generate the Mermaid.js diagram
+        const mermaidDiagram = createMermaidDiagram(concepts);
+        
+        // Create the concept map object with proper structure
         const conceptMap = {
             id: Date.now().toString(),
-            title: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
-            nodes: [],
-            connections: [],
-            metadata: {
-                createdAt: new Date().toISOString(),
-                confidence: 0.9,
-                source: "DeepSeek Analysis",
-                language: await detectLanguage(text)
-            }
-        };
-
-        // Map concepts from API response to React Flow nodes
-        concepts.forEach(concept => {
-            if (!concept.id || !concept.text || !concept.type) {
-                console.warn('Skipping invalid concept from API:', concept);
-                return;
-            }
-
-            conceptMap.nodes.push({
+            title: input.substring(0, 50) + (input.length > 50 ? '... (Synopsis)' : ' (Synopsis)'),
+            nodes: concepts.map(concept => ({
                 id: concept.id.toString(),
                 type: concept.type === 'main' ? 'main' : 'sub',
                 data: {
                     label: concept.text,
                     definition: concept.definition || '',
                 },
-                position: { x: 0, y: 0 }
-            });
-        });
-
-        // Map connections from API response to React Flow edges
-        concepts.forEach(concept => {
-            if (Array.isArray(concept.connections)) {
-                concept.connections.forEach(connection => {
-                    if (connection.targetId && concept.id) {
-                        conceptMap.connections.push({
-                            id: `e${concept.id}-${connection.targetId}`,
-                            source: concept.id.toString(),
-                            target: connection.targetId.toString(),
-                            label: connection.label || '',
-                            animated: true,
-                            type: 'custom',
-                            style: {
-                                stroke: '#4a90e2',
-                                strokeWidth: 2,
-                            },
-                            markerEnd: {
-                                type: 'arrowclosed',
-                                width: 20,
-                                height: 20,
-                                color: '#4a90e2',
-                            }
-                        });
+                position: { x: 0, y: 0 } // Position is now handled by Mermaid auto-layout
+            })),
+            connections: concepts.flatMap(concept => 
+                concept.connections.map(connection => ({
+                    id: `e${concept.id}-${connection.targetId}`,
+                    source: concept.id.toString(),
+                    target: connection.targetId.toString(),
+                    label: connection.label || '',
+                    animated: true,
+                    type: 'custom',
+                    style: {
+                        stroke: '#4a90e2',
+                        strokeWidth: 2,
+                    },
+                    markerEnd: {
+                        type: 'arrowclosed',
+                        width: 20,
+                        height: 20,
+                        color: '#4a90e2',
                     }
-                });
-            }
-        });
+                }))
+            ),
+            metadata: {
+                createdAt: new Date().toISOString(),
+                confidence: 0.9,
+                source: "DeepSeek Analysis",
+                language: language
+            },
+            mermaidDiagram: mermaidDiagram
+        };
 
-        // Validate the concept map
-        const validatedMap = await validateConceptMap(conceptMap);
-
-        return validatedMap;
+        return conceptMap;
     } catch (error) {
         console.error('Error generating concept map:', error);
-        return createBasicConcepts(text);
+        // Return a simple fallback concept map
+        return {
+            id: Date.now().toString(),
+            title: 'Error generating concept map',
+            nodes: [{
+                id: 'error-node',
+                type: 'main',
+                data: {
+                    label: 'Error generating concept map',
+                    definition: 'Please try again'
+                },
+                position: { x: 0, y: 0 }
+            }],
+            connections: [],
+            metadata: {
+                createdAt: new Date().toISOString(),
+                confidence: 0,
+                source: "Error",
+                language: 'en'
+            },
+            mermaidDiagram: `
+                graph TD
+                A["Error generating concept map"] --> B["Please try again"]
+            `
+        };
     }
 }
 
 /**
- * Saves the generated concept map to the database
+ * Saves a concept map to the database
  * @param {Object} conceptMap - The concept map to save
  * @param {string} userId - The ID of the user who created the map
  * @returns {Promise<Object>} The saved concept map
@@ -345,7 +510,7 @@ export async function saveConceptMap(conceptMap, userId) {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                name: conceptMap.title,
+                name: conceptMap.title || 'Untitled Concept Map',
                 content: conceptMap,
                 userId: userId
             }),
