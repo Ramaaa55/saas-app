@@ -103,6 +103,8 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
     const [showRenderer, setShowRenderer] = useState(true);
     const [showCodeEditor, setShowCodeEditor] = useState(false);
     const [mermaidCode, setMermaidCode] = useState('');
+    const [richTextContent, setRichTextContent] = useState('');
+    const [selectedText, setSelectedText] = useState('');
     const lastDiagramRef = useRef(editedMap?.mermaidDiagram);
 
     // Ensure editedMap is always in sync with conceptMap prop
@@ -192,6 +194,13 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
         }
     }, [editedMap?.mermaidDiagram]);
 
+    // Update rich text content when selected node changes
+    useEffect(() => {
+        if (selectedNode) {
+            setRichTextContent(selectedNode.text || '');
+        }
+    }, [selectedNode]);
+
     const handleNodeClick = (nodeId) => {
         if (!isEditing) return;
         
@@ -223,6 +232,50 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
             concepts: updatedConcepts,
             mermaidDiagram: newMermaidDiagram
         }));
+    };
+
+    // Rich text formatting functions
+    const applyFormatting = (format) => {
+        const textarea = document.getElementById('rich-text-editor');
+        if (!textarea) return;
+
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const text = richTextContent;
+        const selectedText = text.substring(start, end);
+
+        let formattedText = '';
+        switch (format) {
+            case 'bold':
+                formattedText = `<strong>${selectedText}</strong>`;
+                break;
+            case 'underline':
+                formattedText = `<u>${selectedText}</u>`;
+                break;
+            case 'highlight':
+                formattedText = `<mark>${selectedText}</mark>`;
+                break;
+            default:
+                return;
+        }
+
+        const newText = text.substring(0, start) + formattedText + text.substring(end);
+        setRichTextContent(newText);
+        
+        // Update the selected node with formatted text
+        handleNodeEdit('text', newText);
+        
+        // Restore focus and selection
+        setTimeout(() => {
+            textarea.focus();
+            textarea.setSelectionRange(start, start + formattedText.length);
+        }, 0);
+    };
+
+    const handleRichTextChange = (e) => {
+        const newValue = e.target.value;
+        setRichTextContent(newValue);
+        handleNodeEdit('text', newValue);
     };
 
     const handleCodeEdit = () => {
@@ -271,27 +324,26 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
     return (
         <div className="w-full">
             <div className="flex justify-end mb-4 gap-2">
-                {/* Enhanced Edit Map button with tooltip */}
-                <div className="tooltip tooltip-bottom" data-tip="Toggle editing mode to modify concept map nodes and structure">
+                {/* Enhanced Edit Mode button with proper toggle behavior */}
+                <div className="tooltip tooltip-bottom" data-tip={isEditing ? "Disable edit mode to return to view-only" : "Enable edit mode to modify concept map content"}>
                     <button
                         onClick={handleEditToggle}
-                        className="btn btn-primary"
+                        className={`btn ${isEditing ? 'btn-warning' : 'btn-primary'}`}
                         disabled={isSaving}
                     >
                         {isEditing ? (
                             <>
                                 <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                 </svg>
-                                View Map
+                                Disable edit mode
                             </>
                         ) : (
                             <>
                                 <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                 </svg>
-                                Edit Map
+                                Enable edit mode
                             </>
                         )}
                     </button>
@@ -381,16 +433,58 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
                             <div className="space-y-4">
                                 <div>
                                     <label className="label">
-                                        <span className="label-text">Node Text (HTML)</span>
+                                        <span className="label-text">Node Text (Rich Text Editor)</span>
                                     </label>
+                                    
+                                    {/* Rich Text Formatting Toolbar */}
+                                    <div className="rich-text-toolbar flex gap-2">
+                                        <div className="tooltip tooltip-bottom" data-tip="Make text bold">
+                                            <button
+                                                onClick={() => applyFormatting('bold')}
+                                                className="btn btn-sm btn-ghost"
+                                                disabled={isSaving}
+                                            >
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 12h8a4 4 0 100-8H6v8zm0 0h8a4 4 0 110 8H6v-8z" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                        <div className="tooltip tooltip-bottom" data-tip="Underline text">
+                                            <button
+                                                onClick={() => applyFormatting('underline')}
+                                                className="btn btn-sm btn-ghost"
+                                                disabled={isSaving}
+                                            >
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                        <div className="tooltip tooltip-bottom" data-tip="Highlight text">
+                                            <button
+                                                onClick={() => applyFormatting('highlight')}
+                                                className="btn btn-sm btn-ghost"
+                                                disabled={isSaving}
+                                            >
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
                                     <textarea
-                                        value={selectedNode.text}
-                                        onChange={(e) => handleNodeEdit('text', e.target.value)}
+                                        id="rich-text-editor"
+                                        value={richTextContent}
+                                        onChange={handleRichTextChange}
                                         className="textarea textarea-bordered w-full"
                                         rows={4}
                                         disabled={isSaving}
-                                        placeholder="Enter node text with HTML formatting..."
+                                        placeholder="Enter node text with rich formatting..."
                                     />
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        💡 Tip: Select text and use the formatting buttons above to apply bold, underline, or highlight.
+                                    </p>
                                 </div>
                                 <div>
                                     <label className="label">
