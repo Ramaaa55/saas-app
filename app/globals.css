@@ -1,5 +1,4 @@
 @tailwind base;
-@tailwind components;
 @tailwind utilities;
 @plugin "daisyui" {
   themes: light --default, dark --prefersdark, retro, cupcake;
@@ -17,126 +16,67 @@
   padding: 32px;
 }
 
-/* Custom styles for concept map nodes */
-.concept-node {
-  font-family: 'ui-monospace', 'SFMono-Regular', 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
-  border-radius: 8px;
-  border: 2px solid;
-  padding: 16px;
-  min-width: 200px;
-  max-width: 300px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  transition: all 0.2s ease;
-  background: white;
+/* Concept Map Specific Styles */
+.concept-map-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 500px;
+  width: 100%;
+  overflow: auto;
+  position: relative;
 }
 
-.concept-node:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  transform: translateY(-1px);
+.concept-map-container svg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
 }
 
-.concept-node.selected {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  border-color: #3b82f6;
+/* Node styling for better visual hierarchy */
+.concept-map-container .node {
+  cursor: pointer;
+  transition: opacity 0.2s ease-in-out;
 }
 
-.concept-node.main {
-  background-color: #f8fafc;
-  border-color: #3b82f6;
-  color: #1e293b;
+.concept-map-container .node:hover {
+  opacity: 0.8;
 }
 
-.concept-node.sub {
-  background-color: #f1f5f9;
-  border-color: #64748b;
-  color: #334155;
+.concept-map-container .node.selected {
+  opacity: 1;
+  stroke: #3b82f6 !important;
+  stroke-width: 3px !important;
 }
 
-.concept-node.detail {
-  background-color: #fefefe;
-  border-color: #94a3b8;
-  color: #475569;
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .concept-map-container {
+    min-height: 400px;
+    padding: 1rem;
+  }
+  
+  .concept-map-container svg {
+    max-width: 95%;
+  }
 }
 
-.concept-node .title {
-  font-weight: 600;
-  margin-bottom: 8px;
-  font-size: 15px;
-  line-height: 1.4;
+/* Modal alignment improvements */
+.modal-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
 }
 
-.concept-node .description {
-  font-size: 12px;
-  color: #6b7280;
-  line-height: 1.3;
-  margin-bottom: 8px;
-}
-
-.concept-node .meta {
-  font-size: 10px;
-  color: #9ca3af;
-  font-style: italic;
-}
-
-/* React Flow custom styles */
-.react-flow__node {
-  border-radius: 8px;
-  border: 2px solid;
-  padding: 0;
-  background: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  transition: all 0.2s ease;
-}
-
-.react-flow__node:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  transform: translateY(-1px);
-}
-
-.react-flow__node.selected {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  border-color: #3b82f6;
-}
-
-.react-flow__edge-path {
-  stroke: #3b82f6;
-  stroke-width: 2;
-}
-
-.react-flow__edge-text {
-  fill: #374151;
-  font-weight: 500;
-  font-size: 12px;
-  font-family: 'ui-monospace', 'SFMono-Regular', 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
-}
-
-.react-flow__controls {
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.react-flow__minimap {
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-/* Custom scrollbar for the concept map container */
-.concept-map-container::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.concept-map-container::-webkit-scrollbar-track {
-  background: #f1f5f9;
-  border-radius: 4px;
-}
-
-.concept-map-container::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 4px;
-}
-
-.concept-map-container::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+/* Edit panel styling */
+.edit-panel {
+  background: hsl(var(--b1));
+  border: 1px solid hsl(var(--bc) / 0.2);
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
 }
 

@@ -118,15 +118,26 @@ async function analyzeWithDeepSeek(text) {
 
 🎯 **CORE REQUIREMENTS (MUST-DO for each generated concept map):**
 
-1.  ✅ **Semantic Precision**:
-    - Ensure all relationships are logically valid and reflect real-world logic (e.g., entity A influences B). Connections must not be generic.
-    - Maintain clear directional flow (general → specific).
-    - Use precise, meaningful connection labels.
-    - Avoid redundant or reversed relationships.
+1.  ✅ **Enhanced Semantic Precision (+200% improvement)**:
+    - **Structured Relationship Vocabulary**: Use ONLY these precise relationship types for connections:
+      * Causal: "causes", "leads to", "results in", "triggers", "enables"
+      * Hierarchical: "contains", "includes", "comprises", "consists of", "is part of"
+      * Temporal: "precedes", "follows", "evolves into", "develops from"
+      * Functional: "supports", "enables", "facilitates", "enhances", "improves"
+      * Conceptual: "relates to", "connects with", "associates with", "correlates with"
+      * Process: "requires", "needs", "depends on", "influences", "affects"
+    - **Enforced Hierarchy**: Create a clear 3-level hierarchy:
+      * Level 1 (main): Central concepts (2-4 nodes)
+      * Level 2 (sub): Supporting concepts (4-8 nodes) 
+      * Level 3 (detail): Specific examples/details (6-12 nodes)
+    - **Semantic Validation**: Every connection must pass these tests:
+      * Directional logic: A → B must mean "A affects/creates/includes B"
+      * Non-circular: No loops in the relationship chain
+      * Non-redundant: No duplicate relationships between same nodes
+      * Contextual relevance: Relationships must be domain-specific, not generic
     - **Include as many nodes as are necessary to fully represent the user's input. Do NOT summarize, omit, or shorten information unless the input is extremely long (over 1000 words), and even then, only summarize with explicit notice.**
     - For normal-length inputs, preserve all key details, facts, and relationships from the user's text.
-    - Validate semantic direction (e.g., "artist → bands", not "bands → artist").
-    - No ambiguous intermediate nodes.
+    - **Semantic Depth**: Each concept must connect to at least 2 other concepts when possible, creating a rich network.
 
 2.  ✅ **Rich Content Structure**:
     - Each node MUST contain a rich, multi-sentence paragraph (3-6 sentences) or well-structured bullet points, with as much detail as possible from the user's input.
@@ -150,12 +161,22 @@ async function analyzeWithDeepSeek(text) {
     - Ensure proper visual spacing within nodes by strategically using <br> for line breaks and content separation.
     - No raw Markdown (e.g., **bold**, _underline_) or special characters that are not part of HTML tags or emojis.
 
+5.  ✅ **Semantic Relationship Mapping**:
+    - **Primary Relationships**: Each main concept should connect to 2-3 sub-concepts
+    - **Secondary Relationships**: Each sub-concept should connect to 1-2 detail concepts
+    - **Cross-Connections**: Allow meaningful cross-connections between related concepts at the same level
+    - **Relationship Labels**: Use the structured vocabulary above, ensuring each label is:
+      * Action-oriented (verb-based)
+      * Domain-specific to the content
+      * Clear and unambiguous
+      * Maximum 3 words
+
 Your response MUST be a JSON array of objects, and ONLY the JSON array. Each object MUST have:
 - 'id': Unique string identifier (e.g., "concept1")
 - 'text': Formatted concept label with emoji and styling, with the main concept bolded and a line break before the detailed explanation.
 - 'type': 'main', 'sub', or 'detail' (based on hierarchy)
 - 'definition': Rich, paragraph-style explanation, using bullet points with <br>-  where appropriate, and including ALL relevant information from the user's input.
-- 'connections': Array of objects with 'targetId' and specific 'label' (maximum 3)
+- 'connections': Array of objects with 'targetId' and specific 'label' (maximum 3, using structured vocabulary)
 - 'class': A string indicating the node's type for styling (e.g., "main-idea", "secondary-idea", "example").
 
 **IMPORTANT: Do NOT omit or shorten any information from the user's input. The more the user writes, the more detail you must include in the map.**
