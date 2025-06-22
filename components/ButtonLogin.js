@@ -13,9 +13,6 @@ const ButtonLogin = ({ session, extraStyle}) => {
               className={`btn btn-primary no-underline ${extraStyle ? extraStyle : ""}`}
             >
               Welcome back {session.user.name || "friend"}
-              {session.user.name && (
-                <p className="text-red-500">{session.user.name}</p>
-              )}
             </Link>
         );
     }   

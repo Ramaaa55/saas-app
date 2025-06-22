@@ -3,8 +3,8 @@ import connectMongo from "@/libs/mongoose";
 import Board from "@/app/models/Board";
 import { auth } from "@/auth";
 import Link from "next/link";
-import CardBoardLink from "@/components/CardBoardLink";
 import ButtonDeleteBoard from "@/components/ButtonDeleteBoard";
+import EditableConceptMapWrapper from "@/components/EditableConceptMapWrapper";
 
 async function getBoard(boardId) {
   const session = await auth();
@@ -24,12 +24,12 @@ async function getBoard(boardId) {
 }
 
 export default async function FeedbackBoard({ params }) {
-  if (!params?.boardId) {
-    // fallback in case params is undefined
+  const { boardId: rawBoardId } = await params;
+
+  if (!rawBoardId) {
     redirect("/dashboard");
   }
-
-  const boardId = decodeURIComponent(params.boardId); // ensure valid string
+  const boardId = decodeURIComponent(rawBoardId);
   const board = await getBoard(boardId);
 
   return (
@@ -58,12 +58,20 @@ export default async function FeedbackBoard({ params }) {
         </div>
       </section>
 
-      <section className="max-w-5xl mx-auto px-5 py-12 space-y-12">
-        {/* 🔗 Enlace visual del board */}
-        <CardBoardLink boardId={board._id.toString()} />
+      <section className="max-w-5xl mx-auto px-5 py-8 space-y-8">
+        {/* Concept Map Visualization */}
+        <div className="bg-base-100 p-8 rounded-3xl min-h-[500px] flex flex-col items-center justify-center" data-testid="mapa-generado">
+          <h2 className="text-xl font-bold mb-6">Concept Map</h2>
+          <EditableConceptMapWrapper 
+            conceptMap={board.content}
+            boardId={boardId}
+          />
+        </div>
 
-        {/* 🗑️ Botón para eliminar el board */}
+        {/* Board Actions */}
+        <div className="flex gap-4 justify-end">
         <ButtonDeleteBoard boardId={board._id.toString()} />
+        </div>
       </section>
     </main>
   );

@@ -4,79 +4,156 @@ import connectMongo from "@/libs/mongoose";
 import User from "@/app/models/User";
 import Board from "@/app/models/Board";
 
-export async function POST(req){
+export async function POST(request) {
     try {
-        const body = await req.json();
-        
-        if (!body.name) {
-            return NextResponse.json(
-                { error: "Board name is required"},
-                { status: 400}
-            );
-        }   
-
         const session = await auth();
+        if (!session?.user?.id) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
 
-        if(!session) {
+        const { name, content, userId } = await request.json();
+
+        await connectMongo();
+
+        const board = await Board.create({
+            userId: session.user.id,
+            name,
+            content,
+        });
+
+        await User.findByIdAndUpdate(
+            session.user.id,
+            { $push: { boards: board._id } }
+        );
+
+        return NextResponse.json(board);
+    } catch (error) {
+        console.error("Error creating board:", error);
+        return NextResponse.json(
+            { error: "Failed to create board" },
+            { status: 500 }
+        );
+    }
+}
+
+export async function GET(request) {
+    try {
+        const session = await auth();
+        if (!session?.user?.id) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+
+        const { searchParams } = new URL(request.url);
+        const boardId = searchParams.get("boardId");
+
+        if (boardId) {
+            // Get specific board
+            await connectMongo();
+            const board = await Board.findOne({
+                _id: boardId,
+                userId: session.user.id,
+            });
+
+            if (!board) {
+                return NextResponse.json({ error: "Board not found" }, { status: 404 });
+            }
+
+            return NextResponse.json(board);
+        } else {
+            // Get all boards for user
+            await connectMongo();
+            const boards = await Board.find({ userId: session.user.id }).sort({
+                createdAt: -1,
+            });
+
+            return NextResponse.json(boards);
+        }
+    } catch (error) {
+        console.error("Error fetching boards:", error);
+        return NextResponse.json(
+            { error: "Failed to fetch boards" },
+            { status: 500 }
+        );
+    }
+}
+
+export async function PUT(request) {
+    try {
+        const session = await auth();
+        if (!session?.user?.id) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+
+        const { boardId, content } = await request.json();
+
+        if (!boardId || !content) {
             return NextResponse.json(
-                { error: "Not authorized" },
-                { status: 401 }
+                { error: "Board ID and content are required" },
+                { status: 400 }
             );
         }
 
         await connectMongo();
 
-        console.log('API received content:', body.content);
-        const user = await User.findById(session.user.id);
+        const board = await Board.findOneAndUpdate(
+            {
+                _id: boardId,
+                userId: session.user.id,
+            },
+            {
+                content: content,
+            },
+            { new: true }
+        );
 
-        const board = await Board.create({
-            userId: user._id,
-            name: body.name,
-            content: body.content,
-        });
-        
-        user.boards.push(board._id);
-        await user.save();
+        if (!board) {
+            return NextResponse.json({ error: "Board not found" }, { status: 404 });
+        }
 
         return NextResponse.json(board);
-
-    } catch (e) {
-        return NextResponse.json({ error: e.message },{ status: 500} );
+    } catch (error) {
+        console.error("Error updating board:", error);
+        return NextResponse.json(
+            { error: "Failed to update board" },
+            { status: 500 }
+        );
     }
 }
 
-
-export async function DELETE(req){
+export async function DELETE(request) {
     try {
-        const { searchParams } = req.nextUrl;
+        const session = await auth();
+        if (!session?.user?.id) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+
+        const { searchParams } = new URL(request.url);
         const boardId = searchParams.get("boardId");
 
         if (!boardId) {
             return NextResponse.json(
-                { error: "boardId is required" },
+                { error: "Board ID is required" },
                 { status: 400 }
             );
         }
 
-        const session = await auth();
+        await connectMongo();
 
-        if (!session) {
-            return NextResponse.json(
-                { error: "Not authorized" },
-                { status: 401}
-            );
-        }
-
-        await Board.deleteOne({
+        const board = await Board.findOneAndDelete({
             _id: boardId,
-            userId: session?.user?.id,
+            userId: session.user.id,
         });
 
-        const user = await User.findById(session?.user?.id);
-        user.boards = user.boards.filter((id) => id.toString() !== boardId);
-        await user.save();
+        if (!board) {
+            return NextResponse.json({ error: "Board not found" }, { status: 404 });
+        }
 
-    } catch (e){
-        return NextResponse.json({ error: e.message }, { status: 500}); 
+        return NextResponse.json({ message: "Board deleted successfully" });
+    } catch (error) {
+        console.error("Error deleting board:", error);
+        return NextResponse.json(
+            { error: "Failed to delete board" },
+            { status: 500 }
+        );
     }
 }

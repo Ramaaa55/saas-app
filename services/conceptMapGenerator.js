@@ -5,7 +5,6 @@
  */
 
 import axios from 'axios';
-import nlp from 'compromise';
 
 // DeepSeek API configuration
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || 'sk-96a7994b00d646809acf5e17fc63ce74';
@@ -14,73 +13,65 @@ const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
 // Language detection configuration
 const LANGDETECT_API_URL = 'https://api.languagedetector.com/v1/detect';
 
-// Enhanced emoji mapping with more diverse options
-const EMOJI_MAPPING = {
-    person: '👤',
-    musician: '🎸',
-    singer: '🎤',
-    composer: '🎼',
-    location: '📍',
-    date: '📅',
-    idea: '💡',
-    concept: '🧠',
-    award: '🏆',
-    instrument: '🎸',
-    lyrics: '🖋️',
-    legacy: '🧬',
-    art: '🎨',
-    science: '🔬',
-    technology: '💻',
-    business: '💼',
-    education: '📚',
-    sports: '⚽',
-    food: '🍽️',
-    nature: '🌿',
-    work: '🎵',
-    default: '📌'
-};
+/**
+ * Escapes text for direct inclusion within a Mermaid node's quoted string.
+ * This function handles internal double quotes and backslashes.
+ * Mermaid expects double quotes to be escaped with a backslash (\").
+ * @param {string} text - The input text, potentially containing HTML tags.
+ * @returns {string} The escaped string suitable for Mermaid.
+ */
+function escapeMermaidText(text) {
+    let escapedText = text;
+    // First, escape backslashes, so we don't accidentally double-escape a later backslash from a quote.
+    escapedText = escapedText.replace(/\\/g, '\\\\');
+    // Then, escape double quotes.
+    escapedText = escapedText.replace(/"/g, '\\"');
+    return escapedText;
+}
 
 /**
- * Parses JSON from markdown content, handling various formats and edge cases
- * @param {string} content - The content to parse
- * @returns {Array} Parsed JSON array
+ * Strips HTML tags and decodes HTML entities from a string.
+ * @param {string} htmlString - The input string potentially containing HTML tags or entities.
+ * @returns {string} The string with HTML tags removed and entities decoded.
  */
-function parseJsonFromMarkdown(content) {
-    try {
-        // First, try direct JSON parse
-        return JSON.parse(content);
-    } catch (e) {
-        console.log('Direct parse failed, attempting to extract JSON from markdown');
-        
+function stripHtmlTags(htmlString) {
+    // Create a temporary DOM element to leverage browser's HTML parsing capabilities
+    const doc = new DOMParser().parseFromString(htmlString, 'text/html');
+    // Get the text content, which automatically decodes HTML entities
+    let textContent = doc.body.textContent || '';
+    
+    // Additionally, replace any remaining problematic characters for Mermaid
+    textContent = textContent.replace(/\r\n|\n|\r/g, ' '); // Replace newlines with spaces
+    textContent = textContent.replace(/"/g, '\"'); // Escape double quotes for Mermaid node syntax
+    textContent = textContent.replace(/\\/g, '\\\\'); // Escape backslashes for Mermaid node syntax
+    
+    return textContent;
+}
+
+/**
+ * Parses a JSON object from a markdown string, typically found within a ```json code block.
+ * It also handles and cleans up common issues like unescaped newlines in the JSON.
+ * @param {string} markdownString - The input markdown string containing the JSON.
+ * @returns {object|null} The parsed JSON object, or null if parsing fails.
+ */
+function parseJsonFromMarkdown(markdownString) {
+    const jsonMatch = markdownString.match(/```json\n(.*?)```/s);
+    if (jsonMatch && jsonMatch[1]) {
+        let jsonString = jsonMatch[1].trim();
+
+        // No aggressive newline replacements here. Let JSON.parse handle standard \n escapes.
+
+        console.log('JSON string before parsing:', jsonString); // Log before parsing
+
         try {
-            // Try to extract JSON from markdown code blocks
-            const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
-            if (jsonMatch) {
-                const jsonContent = jsonMatch[1].trim();
-                return JSON.parse(jsonContent);
-            }
-            
-            // If no code block, try to find JSON array directly
-            const arrayMatch = content.match(/\[\s*\{[\s\S]*\}\s*\]/);
-            if (arrayMatch) {
-                return JSON.parse(arrayMatch[0]);
-            }
-            
-            // If still no match, try to clean the content and parse
-            const cleanedContent = content
-                .replace(/```json\n?/g, '')
-                .replace(/```\n?/g, '')
-                .replace(/\\n/g, ' ')
-                .replace(/\n/g, ' ')
-                .trim();
-            
-            return JSON.parse(cleanedContent);
-        } catch (parseError) {
-            console.error('Failed to parse JSON from markdown:', parseError);
-            console.error('Problematic content:', content);
-            throw new Error('Invalid JSON format from API');
+            const parsed = JSON.parse(jsonString);
+            return parsed;
+        } catch (error) {
+            console.error('Error parsing JSON string:', jsonString, error);
+            return null;
         }
     }
+    return null;
 }
 
 /**
@@ -109,73 +100,6 @@ function detectLanguage(text) {
 }
 
 /**
- * Adds appropriate emoji to a concept based on its type and content
- * @param {string} text - Concept text
- * @param {string} type - Concept type
- * @returns {string} Text with emoji prefix
- */
-function addEmoji(text, type) {
-    const lowerText = text.toLowerCase();
-    let emoji = EMOJI_MAPPING.default;
-
-    if (type === 'main') {
-        emoji = '🎯';
-    } else if (lowerText.includes('musician') || lowerText.includes('guitarist') || lowerText.includes('band') || lowerText.includes('rock')) {
-        emoji = EMOJI_MAPPING.musician;
-    } else if (lowerText.includes('singer') || lowerText.includes('vocalist')) {
-        emoji = EMOJI_MAPPING.singer;
-    } else if (lowerText.includes('composer') || lowerText.includes('songwriter')) {
-        emoji = EMOJI_MAPPING.composer;
-    } else if (lowerText.includes('born') || lowerText.includes('died') || lowerText.includes('date') || lowerText.includes('january') || lowerText.includes('february')) {
-        emoji = EMOJI_MAPPING.date;
-    } else if (lowerText.includes('city') || lowerText.includes('country') || lowerText.includes('place') || lowerText.includes('location') || lowerText.includes('villa urquiza') || lowerText.includes('buenos aires')) {
-        emoji = EMOJI_MAPPING.location;
-    } else if (lowerText.includes('influence') || lowerText.includes('philosophy') || lowerText.includes('thought') || lowerText.includes('intellectual') || lowerText.includes('thinker')) {
-        emoji = EMOJI_MAPPING.concept;
-    } else if (lowerText.includes('award') || lowerText.includes('recognition') || lowerText.includes('achievement') || lowerText.includes('honor')) {
-        emoji = EMOJI_MAPPING.award;
-    } else if (lowerText.includes('instrument') || lowerText.includes('guitar') || lowerText.includes('piano') || lowerText.includes('bass') || lowerText.includes('drums')) {
-        emoji = EMOJI_MAPPING.instrument;
-    } else if (lowerText.includes('lyrics') || lowerText.includes('poetry') || lowerText.includes('poem') || lowerText.includes('writer')) {
-        emoji = EMOJI_MAPPING.lyrics;
-    } else if (lowerText.includes('legacy') || lowerText.includes('impact')) {
-        emoji = EMOJI_MAPPING.legacy;
-    } else if (lowerText.includes('song') || lowerText.includes('album') || lowerText.includes('work') || lowerText.includes('discography') || lowerText.includes('compositions')) {
-        emoji = EMOJI_MAPPING.work;
-    } else if (lowerText.includes('art') || lowerText.includes('painting') || lowerText.includes('sculpture')) {
-        emoji = EMOJI_MAPPING.art;
-    } else if (lowerText.includes('science') || lowerText.includes('research') || lowerText.includes('discovery')) {
-        emoji = EMOJI_MAPPING.science;
-    } else if (lowerText.includes('technology') || lowerText.includes('software') || lowerText.includes('ai')) {
-        emoji = EMOJI_MAPPING.technology;
-    }
-
-    return `${emoji} ${text}`;
-}
-
-/**
- * Bolds key terms in text
- * @param {string} text - Input text
- * @returns {string} Text with key terms bolded
- */
-function boldKeyTerms(text) {
-    // Common patterns for key terms
-    const patterns = [
-        /\b[A-Z][a-z]+ [A-Z][a-z]+\b/g, // Proper names
-        /\b[A-Z][a-z]+(?: [A-Z][a-z]+)*\b/g, // Single proper names
-        /\b(?:born|died|created|founded|established)\b/gi, // Key verbs
-        /\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\b/gi // Months
-    ];
-
-    let result = text;
-    patterns.forEach(pattern => {
-        result = result.replace(pattern, match => `**${match}**`);
-    });
-
-    return result;
-}
-
-/**
  * Analyzes text using DeepSeek for deep reasoning and comprehension
  * @param {string} text - Input text to analyze
  * @returns {Promise<Array>} Array of extracted concepts and relationships
@@ -190,58 +114,66 @@ async function analyzeWithDeepSeek(text) {
             return createBasicConcepts(text);
         }
 
-        const systemPrompt = `You are an expert at creating visually appealing, semantically rich, and knowledge-dense concept maps. Your task is to analyze the user's input (in ${language}) and generate a concept map that combines aesthetic precision with informational depth.
+        const systemPrompt = `You are an expert at creating sophisticated, semantically precise concept maps for a modern SaaS application. Your task is to transform complex knowledge into clear, elegant visualizations that maintain semantic accuracy while being visually appealing.
 
 🎯 **CORE REQUIREMENTS (MUST-DO for each generated concept map):**
 
-1.  ✅ **Visual Aesthetics**:
-    - Use strategic emojis (1-2 per branch) as visual signposts
-    - Apply visual hierarchy through text formatting
-    - Avoid raw Markdown syntax in output
-    - Use uppercase for main concepts
-    - Format: "🎯 MAIN CONCEPT<br><small>Supporting details</small><br>- Key point 1<br>- Key point 2"
+1.  ✅ **Semantic Precision**:
+    - Ensure all relationships are logically valid and reflect real-world logic (e.g., entity A influences B). Connections must not be generic.
+    - Maintain clear directional flow (general → specific).
+    - Use precise, meaningful connection labels.
+    - Avoid redundant or reversed relationships.
+    - **Include as many nodes as are necessary to fully represent the user's input. Do NOT summarize, omit, or shorten information unless the input is extremely long (over 1000 words), and even then, only summarize with explicit notice.**
+    - For normal-length inputs, preserve all key details, facts, and relationships from the user's text.
+    - Validate semantic direction (e.g., "artist → bands", not "bands → artist").
+    - No ambiguous intermediate nodes.
 
-2.  ✅ **Rich Node Content**:
-    - Each node MUST contain specific, detailed information
-    - Include concrete examples and timeframes
-    - Use bullet points for organized lists
-    - Add contextual information
-    - Format: "🎯 MAIN CONCEPT<br><small>Brief context</small><br>- Specific example 1<br>- Specific example 2"
+2.  ✅ **Rich Content Structure**:
+    - Each node MUST contain a rich, multi-sentence paragraph (3-6 sentences) or well-structured bullet points, with as much detail as possible from the user's input.
+    - Include specific examples, dates, and contextual information.
+    - Use proper paragraph structure with clear topic sentences.
+    - For the central concept within a node's 'text' field, always ensure it is in <strong>bold</strong> and has a line break (<br>) separating it from the detailed explanation. For example: "🎤 <strong>MAIN IDEA</strong><br><small>Detailed paragraph with specific examples and context.</small>".
+    - Use bullet points (<br>- ) for related sub-elements or lists within the 'definition' field when relevant.
+    - **Do NOT shorten or omit any information from the user's input.**
 
-3.  ✅ **Semantic Structure**:
-    - Maintain clear hierarchy (general → specific)
-    - Follow implicit chronology when applicable
-    - Group related concepts logically
-    - Limit cross-links to distinct relationships
-    - Maximum 7 nodes total for clarity
+3.  ✅ **Visual Elegance & Thematic Styling**:
+    - Use exactly ONE emoji per node (only at the start).
+    - Apply HTML tags for styling: <strong> for main concepts, <small> for detailed paragraphs, <u> for key examples, and <em> for other necessary emphasis (e.g., italics).
+    - Ensure clean, modern SaaS aesthetics that mimic the attached visual style example (pastel colors, slightly sketchy border look). You will also provide a 'class' property for each node to enable this styling.
+    - Format: "🎤 <strong>CONCEPT</strong><br><small>Rich paragraph content</small>".
+    - Use <br> for bullet points.
+    - No visual clutter or unnecessary cross-connections.
 
 4.  ✅ **Language and Formatting**:
-    - ALL content in ${language === 'es' ? 'Spanish' : 'English'}
-    - Use uppercase for main concepts
-    - Use <small> for supporting details
-    - Add strategic emojis for context
-    - Use <br> for line breaks and bullet points
+    - ALL content in ${language === 'es' ? 'Spanish' : 'English'}.
+    - Use <br> for proper line breaks (ABSOLUTELY NO \n or \n\n for newlines within the JSON string values. ONLY AND ALWAYS USE <br> FOR NEWLINES.).
+    - Ensure proper visual spacing within nodes by strategically using <br> for line breaks and content separation.
+    - No raw Markdown (e.g., **bold**, _underline_) or special characters that are not part of HTML tags or emojis.
 
 Your response MUST be a JSON array of objects, and ONLY the JSON array. Each object MUST have:
 - 'id': Unique string identifier (e.g., "concept1")
-- 'text': Formatted concept label with emoji and styling
+- 'text': Formatted concept label with emoji and styling, with the main concept bolded and a line break before the detailed explanation.
 - 'type': 'main', 'sub', or 'detail' (based on hierarchy)
-- 'definition': Rich, self-contained explanation with proper formatting
+- 'definition': Rich, paragraph-style explanation, using bullet points with <br>-  where appropriate, and including ALL relevant information from the user's input.
 - 'connections': Array of objects with 'targetId' and specific 'label' (maximum 3)
+- 'class': A string indicating the node's type for styling (e.g., "main-idea", "secondary-idea", "example").
 
-Example of a visually appealing concept in ${language === 'es' ? 'Spanish' : 'English'}:
+**IMPORTANT: Do NOT omit or shorten any information from the user's input. The more the user writes, the more detail you must include in the map.**
+
+Example of a semantically precise concept in ${language === 'es' ? 'Spanish' : 'English'}:
 {
   "id": "concept1",
-  "text": "${language === 'es' ? '🎤 LUIS A. SPINETTA<br><small>Músico y poeta argentino (1950–2012)</small>' : '🎤 LUIS A. SPINETTA<br><small>Argentine musician and poet (1950–2012)</small>'}",
+  "text": "${language === 'es' ? '🎤 <strong>Luis Alberto Spinetta</strong><br><small>Músico y poeta argentino (1950–2012), pionero del rock en español. Su obra mezcla poesía, filosofía y experimentación sonora.</small>' : '🎤 <strong>Luis Alberto Spinetta</strong><br><small>Argentine musician and poet (1950–2012), pioneer of Spanish-language rock. His work blends poetry, philosophy, and sonic experimentation.</small>'}",
   "type": "main",
-  "definition": "${language === 'es' ? 'Fundador del rock argentino y pionero del rock progresivo:<br>- _Nacido en_ 1950 en Buenos Aires<br>- _Formó_ la banda Almendra en 1967<br>- _Influenciado por_ la poesía de Rimbaud<br>- _Compuso_ más de 400 canciones<br>- _Ejemplo:_ "Muchacha ojos de papel" (1969)' : 'Founder of Argentine rock and pioneer of progressive rock:<br>- _Born in_ 1950 in Buenos Aires<br>- _Formed_ the band Almendra in 1967<br>- _Influenced by_ Rimbaud\'s poetry<br>- _Composed_ over 400 songs<br>- _Example:_ "Muchacha ojos de papel" (1969)'}",
+  "definition": "${language === 'es' ? 'Fundador del rock argentino y pionero del rock progresivo. Su obra se caracteriza por una profunda exploración lírica y musical, fusionando elementos de la poesía surrealista con innovaciones sonoras:<br>- <u>Nacido en</u> 1950 en Buenos Aires<br>- <u>Formó</u> la banda Almendra en 1967<br>- <u>Influenciado por</u> la poesía de Rimbaud y el surrealismo<br>- <u>Compuso</u> más de 400 canciones que fusionan rock con poesía<br>- <u>Ejemplo:</u> \'Muchacha ojos de papel\'(1969), una obra maestra de la lírica rockera' : 'Founder of Argentine rock and pioneer of progressive rock. His work is characterized by deep lyrical and musical exploration, fusing elements of surrealist poetry with sonic innovations:<br>- <u>Born in</u> 1950 in Buenos Aires<br>- <u>Formed</u> the band Almendra in 1967<br>- <u>Influenced by</u> Rimbaud\'s poetry and surrealism<br>- <u>Composed</u> over 400 songs that fuse rock with poetry<br>- <u>Example:</u> \'Muchacha ojos de papel\'(1969), a masterpiece of rock lyrics'}",
   "connections": [
-    {"targetId": "concept2", "label": "${language === 'es' ? 'formó parte de' : 'was part of'}"},
-    {"targetId": "concept3", "label": "${language === 'es' ? 'influenciado por' : 'influenced by'}"}
-  ]
+    {"targetId": "concept2", "label": "${language === 'es' ? 'fundó' : 'founded'}"},
+    {"targetId": "concept3", "label": "${language === 'es' ? 'compuso' : 'composed'}"}
+  ],
+  "class": "main-idea"
 }
 
-Ensure each node is visually appealing and contains rich, specific information. Avoid raw Markdown syntax and use strategic emojis.`;
+Ensure each node contains rich, paragraph-style content with specific examples and context. Use HTML tags for styling and avoid raw Markdown syntax.`
 
         const response = await axios.post(DEEPSEEK_API_URL, {
             model: "deepseek-chat",
@@ -272,15 +204,21 @@ Ensure each node is visually appealing and contains rich, specific information. 
             
             // Post-process concepts to ensure they meet our requirements
             const processedConcepts = concepts.map(concept => {
-                // Ensure definition is rich and informative
-                if (!concept.definition || concept.definition.length < 100) {
-                    concept.definition = `${concept.definition || ''}\n- _Add more context and explanation_\n- _Include key details and relationships_\n- _Provide specific examples or applications_`;
+                // Ensure definition is rich and paragraph-style
+                if (!concept.definition || concept.definition.length < 50) { // Reduced minimum length
+                    concept.definition = `${concept.definition || ''} `; // Ensure there's at least a space
                 }
                 
+                // Post-process text and definition to ensure all newlines are <br>
+                concept.text = concept.text.replace(/\r\n|\n|\r/g, '<br>');
+                concept.definition = concept.definition.replace(/\r\n|\n|\r/g, '<br>');
+
+                // The LLM is now responsible for formatting 'text' with <strong>, <small>, <u> and emoji.
+                // We remove the old formatting logic here.
                 // Ensure text has proper formatting
-                if (!concept.text.includes('<small>')) {
-                    concept.text = `${concept.text}<br><small>${language === 'es' ? 'Concepto principal' : 'Main concept'}</small>`;
-                }
+                // if (!concept.text.includes('<strong>')) {
+                //     concept.text = `<strong>${concept.text}</strong><br><small>${language === 'es' ? 'Concepto principal' : 'Main concept'}</small>`;
+                // }
                 
                 // Limit connections to 3 most important ones
                 if (concept.connections && concept.connections.length > 3) {
@@ -289,8 +227,8 @@ Ensure each node is visually appealing and contains rich, specific information. 
                 
                 return {
                     ...concept,
-                    text: addEmoji(boldKeyTerms(concept.text), concept.type),
-                    definition: boldKeyTerms(concept.definition || '')
+                    text: concept.text,
+                    definition: concept.definition
                 };
             });
             
@@ -305,7 +243,6 @@ Ensure each node is visually appealing and contains rich, specific information. 
         if (error.response) {
             console.error('Error response data:', error.response.data);
             console.error('Error response status:', error.response.status);
-            console.error('Error response headers:', error.response.headers);
             
             if (error.response.status === 401) {
                 console.error('Authentication failed. Please check your API key.');
@@ -330,7 +267,7 @@ function createBasicConcepts(text) {
         id: 'node-0',
         text: text.substring(0, 100) + (text.length > 100 ? '...' : ''),
         type: 'main',
-        definition: 'Could not generate detailed map.',
+        definition: 'Could not generate detailed map. Please try again or provide more input.',
         connections: []
     }];
 }
@@ -348,6 +285,7 @@ function createBasicConcepts(text) {
  * @returns {Promise<Object>} Validated concept map
  */
 async function validateConceptMap(conceptMap) {
+    // This comment is added to trigger a recompile and ensure the latest code is loaded.
     // TODO: Implement Arguflow and NeMo Guardrails integration
     return {
         ...conceptMap,
@@ -361,36 +299,34 @@ async function validateConceptMap(conceptMap) {
  * @param {Array} concepts - Array of processed concept objects
  * @returns {string} Mermaid.js diagram syntax
  */
-function createMermaidDiagram(concepts) {
+export function createMermaidDiagram(concepts) {
     try {
         // Start with graph TD for top-down layout
         let diagram = 'graph TD\n';
-        
-        // Add nodes with rich content
+
+        // Define Mermaid class styles based on the example image aesthetic
+        diagram += `  classDef main-idea fill:#E8F4EA,stroke:#2C5530,stroke-width:2.5px,stroke-dasharray: 8 3;\n`; // Soft Sage Green
+        diagram += `  classDef secondary-idea fill:#F5E6E8,stroke:#8B5A2B,stroke-width:2.5px,stroke-dasharray: 8 3;\n`; // Soft Rose
+        diagram += `  classDef example fill:#E6F3FF,stroke:#2B4C7E,stroke-width:2.5px,stroke-dasharray: 8 3;\n`; // Soft Blue
+        diagram += `  classDef detail fill:#F5F5DC,stroke:#8B7355,stroke-width:2.5px,stroke-dasharray: 8 3;\n`; // Soft Beige
+
+        // Add nodes with their content
         concepts.forEach(concept => {
-            // Format the node content with proper line breaks and styling
-            const nodeContent = concept.text
-                .replace(/<br>/g, '\\n')
-                .replace(/<small>(.*?)<\/small>/g, '\\n<small>$1</small>')  // Preserve small text
-                .replace(/\*\*(.*?)\*\*/g, '$1')  // Remove raw bold
-                .replace(/_(.*?)_/g, '$1');       // Remove raw underline
-            
-            // Add the node with its formatted content
-            diagram += `  ${concept.id}["${nodeContent}"]\n`;
+            const escapedText = escapeMermaidText(concept.text);
+            const escapedDefinition = escapeMermaidText(concept.definition);
+            diagram += `  ${concept.id}["${escapedText}"]:::${concept.class || 'main-idea'};\n`;
         });
-        
-        // Add connections with meaningful labels
+
+        // Add connections with enhanced styling
         concepts.forEach(concept => {
             if (concept.connections) {
                 concept.connections.forEach(conn => {
-                    // Only add connection if both nodes exist
-                    if (concepts.some(c => c.id === conn.targetId)) {
-                        diagram += `  ${concept.id} -->|"${conn.label}"| ${conn.targetId}\n`;
-                    }
+                    const escapedLabel = escapeMermaidText(conn.label);
+                    diagram += `  ${concept.id} -->|"<span style='font-size: 12px; font-weight: 500; color: #4A5568; background-color: #F7FAFC; padding: 2px 6px; border-radius: 4px; border: 1px solid #E2E8F0;'>${escapedLabel}</span>"| ${conn.targetId};\n`;
                 });
             }
         });
-        
+
         return diagram;
     } catch (error) {
         console.error('Error creating Mermaid diagram:', error);
@@ -405,11 +341,8 @@ function createMermaidDiagram(concepts) {
  */
 export async function generateConceptMap(input) {
     try {
-        // Process the input text using compromise for basic NLP
-        const doc = nlp(input);
-        
         // Get key concepts (nouns and noun phrases)
-        const keyConcepts = doc.nouns().out('array');
+        // const keyConcepts = doc.nouns().out('array'); // Removed unused line
         
         // Detect language
         const language = detectLanguage(input);
@@ -420,6 +353,9 @@ export async function generateConceptMap(input) {
         // Validate the concept map
         const validatedMap = await validateConceptMap({ concepts });
         
+        // Log concepts before creating Mermaid diagram for debugging
+        console.log('Concepts before Mermaid diagram creation:', concepts);
+
         // Generate the Mermaid.js diagram
         const mermaidDiagram = createMermaidDiagram(concepts);
         
