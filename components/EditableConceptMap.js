@@ -20,11 +20,14 @@ function MermaidRenderer({ diagram, onNodeClick, selectedNodeId }) {
                 if (isMounted && hostRef.current) {
                     hostRef.current.innerHTML = svg;
 
-                    // Add click listeners to nodes after rendering
+                    // Enhanced event handling for Mermaid elements
                     const nodes = hostRef.current.querySelectorAll('.node');
                     
                     nodes.forEach(node => {
-                        node.addEventListener('click', () => {
+                        // Add click listener to the node group
+                        node.addEventListener('click', (e) => {
+                            // Prevent event bubbling to avoid conflicts
+                            e.stopPropagation();
                             onNodeClick(node.id);
                         });
                         
@@ -34,7 +37,32 @@ function MermaidRenderer({ diagram, onNodeClick, selectedNodeId }) {
                         } else {
                             node.classList.remove('selected');
                         }
+
+                        // Prevent text selection on nodes
+                        const textElements = node.querySelectorAll('text');
+                        textElements.forEach(text => {
+                            text.style.userSelect = 'none';
+                            text.style.pointerEvents = 'none';
+                        });
                     });
+
+                    // Handle edge interactions
+                    const edgePaths = hostRef.current.querySelectorAll('.edgePath');
+                    edgePaths.forEach(edge => {
+                        edge.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            // Optional: Add edge click handling here
+                        });
+                    });
+
+                    // Prevent unwanted text selection on the entire diagram
+                    const svgElement = hostRef.current.querySelector('svg');
+                    if (svgElement) {
+                        svgElement.style.userSelect = 'none';
+                        svgElement.style.webkitUserSelect = 'none';
+                        svgElement.style.mozUserSelect = 'none';
+                        svgElement.style.msUserSelect = 'none';
+                    }
                 }
             })
             .catch((err) => {
@@ -51,10 +79,6 @@ function MermaidRenderer({ diagram, onNodeClick, selectedNodeId }) {
             isMounted = false;
             if (hostRef.current) {
                 // Clean up listeners when component unmounts or diagram changes
-                const nodes = hostRef.current.querySelectorAll('.node');
-                nodes.forEach(node => {
-                    // It's tricky to remove anonymous functions, but cleanup innerHTML is enough
-                });
                 hostRef.current.innerHTML = '';
             }
         };
@@ -77,12 +101,9 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
     const [selectedNode, setSelectedNode] = useState(null);
     const [editedMap, setEditedMap] = useState(conceptMap);
     const [showRenderer, setShowRenderer] = useState(true);
+    const [showCodeEditor, setShowCodeEditor] = useState(false);
+    const [mermaidCode, setMermaidCode] = useState('');
     const lastDiagramRef = useRef(editedMap?.mermaidDiagram);
-
-    // Debug logging to understand data structure
-    useEffect(() => {
-        // Removed debug logging for production
-    }, [conceptMap]);
 
     // Ensure editedMap is always in sync with conceptMap prop
     useEffect(() => {
@@ -164,6 +185,13 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
         }
     }, [editedMap?.mermaidDiagram]);
 
+    // Update mermaid code when diagram changes
+    useEffect(() => {
+        if (editedMap?.mermaidDiagram) {
+            setMermaidCode(editedMap.mermaidDiagram);
+        }
+    }, [editedMap?.mermaidDiagram]);
+
     const handleNodeClick = (nodeId) => {
         if (!isEditing) return;
         
@@ -197,35 +225,121 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
         }));
     };
 
+    const handleCodeEdit = () => {
+        try {
+            // Validate the Mermaid code
+            mermaid.parse(mermaidCode);
+            
+            // Update the diagram
+            setEditedMap(prev => ({
+                ...prev,
+                mermaidDiagram: mermaidCode
+            }));
+            
+            toast.success('Diagram updated successfully');
+        } catch (error) {
+            toast.error('Invalid Mermaid syntax: ' + error.message);
+        }
+    };
+
     const handleSave = async () => {
         const result = await onSave(editedMap);
         if (result.success) {
             toast.success('Changes saved successfully');
             setIsEditing(false);
             setSelectedNode(null);
+            setShowCodeEditor(false);
         } else {
             toast.error(result.error || 'Error saving changes');
         }
     };
 
+    const handleEditToggle = () => {
+        if (!isEditing) {
+            // Check if we have valid data before enabling editing
+            if (!editedMap || !editedMap.concepts || editedMap.concepts.length === 0) {
+                toast.error('No concept data available for editing');
+                return;
+            }
+        }
+        
+        setIsEditing(!isEditing);
+        setSelectedNode(null);
+        setShowCodeEditor(false);
+    };
+
     return (
         <div className="w-full">
-            <div className="flex justify-end mb-4">
-                <button
-                    onClick={() => {
-                        // Ensure we have valid concepts before enabling editing
-                        if (!isEditing && (!editedMap || !editedMap.concepts || editedMap.concepts.length === 0)) {
-                            toast.error('No concept data available for editing');
-                            return;
-                        }
-                        setIsEditing(!isEditing);
-                    }}
-                    className="btn btn-primary"
-                    disabled={isSaving}
-                >
-                    {isEditing ? "View Map" : "Edit Map"}
-                </button>
+            <div className="flex justify-end mb-4 gap-2">
+                {/* Enhanced Edit Map button with tooltip */}
+                <div className="tooltip tooltip-bottom" data-tip="Toggle editing mode to modify concept map nodes and structure">
+                    <button
+                        onClick={handleEditToggle}
+                        className="btn btn-primary"
+                        disabled={isSaving}
+                    >
+                        {isEditing ? (
+                            <>
+                                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                </svg>
+                                View Map
+                            </>
+                        ) : (
+                            <>
+                                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                                Edit Map
+                            </>
+                        )}
+                    </button>
+                </div>
+                
+                {/* Code Editor Toggle - only show when in editing mode */}
+                {isEditing && (
+                    <div className="tooltip tooltip-bottom" data-tip="Edit Mermaid diagram code directly">
+                        <button
+                            onClick={() => setShowCodeEditor(!showCodeEditor)}
+                            className={`btn btn-sm ${showCodeEditor ? 'btn-secondary' : 'btn-outline'}`}
+                        >
+                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                            </svg>
+                            {showCodeEditor ? 'Hide Code' : 'Code Editor'}
+                        </button>
+                    </div>
+                )}
             </div>
+
+            {/* Code Editor Panel */}
+            {isEditing && showCodeEditor && (
+                <div className="code-editor-panel mb-4 p-4 rounded-lg border">
+                    <div className="flex justify-between items-center mb-3">
+                        <h4 className="text-lg font-semibold">Mermaid Diagram Code</h4>
+                        <div className="tooltip tooltip-bottom" data-tip="Apply changes to the diagram">
+                            <button
+                                onClick={handleCodeEdit}
+                                className="btn btn-sm btn-primary"
+                            >
+                                Apply Changes
+                            </button>
+                        </div>
+                    </div>
+                    <textarea
+                        value={mermaidCode}
+                        onChange={(e) => setMermaidCode(e.target.value)}
+                        className="textarea textarea-bordered w-full font-mono text-sm"
+                        rows={8}
+                        placeholder="Edit Mermaid diagram code here..."
+                    />
+                    <p className="text-xs text-gray-500 mt-2">
+                        💡 Tip: Modify the diagram structure, add new nodes, or change styling. Click "Apply Changes" to update the visualization.
+                    </p>
+                </div>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className={`lg:col-span-2 ${isEditing ? '' : 'lg:col-span-3'}`}>
                     {showRenderer && (

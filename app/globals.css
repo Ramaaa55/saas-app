@@ -25,6 +25,11 @@
   width: 100%;
   overflow: auto;
   position: relative;
+  /* Prevent text selection on the container */
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
 }
 
 .concept-map-container svg {
@@ -32,22 +37,88 @@
   height: auto;
   display: block;
   margin: 0 auto;
+  /* Ensure smooth rendering */
+  shape-rendering: geometricPrecision;
+  text-rendering: optimizeLegibility;
 }
 
-/* Node styling for better visual hierarchy */
-.concept-map-container .node {
+/* Mermaid-compatible hover effects - targeting specific SVG elements */
+.concept-map-container .node rect {
   cursor: pointer;
-  transition: opacity 0.2s ease-in-out;
+  /* Remove transitions to prevent flickering */
+  /* Ensure proper rendering */
+  shape-rendering: geometricPrecision;
+}
+
+.concept-map-container .node:hover rect {
+  /* Use fill-opacity instead of opacity to avoid affecting text */
+  fill-opacity: 0.9;
+  /* Smooth transition for fill-opacity only */
+  transition: fill-opacity 0.15s ease-out;
+}
+
+.concept-map-container .node.selected rect {
+  stroke: #3b82f6 !important;
+  stroke-width: 3px !important;
+  fill-opacity: 1;
+}
+
+/* Handle text elements within nodes */
+.concept-map-container .node text {
+  pointer-events: none; /* Prevent text from interfering with hover */
+  /* Ensure text remains crisp */
+  text-rendering: optimizeLegibility;
+}
+
+/* Handle edge/connection hover effects */
+.concept-map-container .edgePath {
+  cursor: pointer;
+  /* Smooth transitions for edges */
+  transition: stroke-opacity 0.15s ease-out;
+}
+
+.concept-map-container .edgePath:hover {
+  stroke-opacity: 0.7;
+}
+
+/* Handle edge labels */
+.concept-map-container .edgeLabel {
+  pointer-events: none; /* Prevent label interference */
+}
+
+/* Ensure proper z-index for interactive elements */
+.concept-map-container .node {
+  z-index: 1;
 }
 
 .concept-map-container .node:hover {
-  opacity: 0.8;
+  z-index: 2;
 }
 
-.concept-map-container .node.selected {
-  opacity: 1;
-  stroke: #3b82f6 !important;
-  stroke-width: 3px !important;
+/* Prevent any unwanted hover effects on non-interactive elements */
+.concept-map-container .cluster rect,
+.concept-map-container .cluster text {
+  pointer-events: none;
+}
+
+/* Handle any remaining Mermaid elements */
+.concept-map-container .label {
+  pointer-events: none;
+}
+
+/* Ensure smooth animations for any dynamic content */
+.concept-map-container * {
+  /* Disable all transitions by default to prevent conflicts */
+  transition: none;
+}
+
+/* Only enable transitions for specific hover effects */
+.concept-map-container .node:hover rect {
+  transition: fill-opacity 0.15s ease-out;
+}
+
+.concept-map-container .edgePath:hover {
+  transition: stroke-opacity 0.15s ease-out;
 }
 
 /* Responsive adjustments */
@@ -78,5 +149,86 @@
   border: 1px solid hsl(var(--bc) / 0.2);
   border-radius: 0.5rem;
   box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+}
+
+/* Code editor styling */
+.code-editor-panel {
+  background: hsl(var(--b2));
+  border: 1px solid hsl(var(--bc) / 0.3);
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 4px -1px rgb(0 0 0 / 0.1);
+}
+
+/* Enhanced tooltip styling */
+.tooltip {
+  position: relative;
+}
+
+.tooltip[data-tip]:before {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: hsl(var(--b3));
+  color: hsl(var(--bc));
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease-in-out;
+  z-index: 1000;
+  border: 1px solid hsl(var(--bc) / 0.2);
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+}
+
+.tooltip[data-tip]:after {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: hsl(var(--b3));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease-in-out;
+  z-index: 1000;
+}
+
+.tooltip:hover[data-tip]:before,
+.tooltip:hover[data-tip]:after {
+  opacity: 1;
+}
+
+/* Button hover effects for better UX */
+.btn:hover {
+  transform: translateY(-1px);
+  transition: transform 0.2s ease-in-out;
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+/* Code editor textarea styling */
+.code-editor-panel textarea {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  line-height: 1.5;
+  tab-size: 2;
+}
+
+/* Responsive button layout */
+@media (max-width: 640px) {
+  .flex.justify-end.mb-4.gap-2 {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .flex.justify-end.mb-4.gap-2 > div {
+    margin-bottom: 0.5rem;
+  }
 }
 
