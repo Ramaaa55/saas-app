@@ -107,6 +107,11 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
     const [selectedText, setSelectedText] = useState('');
     const lastDiagramRef = useRef(editedMap?.mermaidDiagram);
 
+    // Debug logging to understand data structure
+    useEffect(() => {
+        // Debug logging removed for production
+    }, [conceptMap]);
+
     // Ensure editedMap is always in sync with conceptMap prop
     useEffect(() => {
         setEditedMap(conceptMap);
@@ -126,10 +131,11 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
         });
     }, []);
 
-    // If mermaidDiagram is missing but concepts or nodes exist, regenerate it
+    // Enhanced data processing and validation
     useEffect(() => {
-        if (conceptMap && !conceptMap.mermaidDiagram) {
+        if (conceptMap) {
             let concepts = conceptMap.concepts;
+            let mermaidDiagram = conceptMap.mermaidDiagram;
             
             // If only nodes exist, convert them to concepts format
             if (!concepts && conceptMap.nodes) {
@@ -146,13 +152,26 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
                         text: node.data?.label || node.label || '',
                         type: node.type || 'main',
                         definition: node.data?.definition || node.definition || '',
-                        connections: nodeConnections, // Rebuild connections
-                        class: 'main-idea', // Default class
+                        connections: nodeConnections,
+                        class: 'main-idea',
                     };
                 });
             }
             
-            // If no concepts or nodes, create a basic structure
+            // If no concepts or nodes, but we have a mermaidDiagram, try to extract concepts
+            if ((!concepts || concepts.length === 0) && mermaidDiagram) {
+                // Create a basic concept from the diagram
+                concepts = [{
+                    id: 'extracted-concept',
+                    text: 'Concept from Diagram',
+                    type: 'main',
+                    definition: 'Concept extracted from existing diagram',
+                    connections: [],
+                    class: 'main-idea'
+                }];
+            }
+            
+            // If still no concepts, create a basic structure
             if (!concepts || concepts.length === 0) {
                 concepts = [{
                     id: 'default-concept',
@@ -164,14 +183,19 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
                 }];
             }
             
-            if (concepts && concepts.length > 0) {
-                const regenerated = {
-                    ...conceptMap,
-                    concepts,
-                    mermaidDiagram: createMermaidDiagram(concepts)
-                };
-                setEditedMap(regenerated);
+            // Generate mermaid diagram if missing
+            if (!mermaidDiagram && concepts && concepts.length > 0) {
+                mermaidDiagram = createMermaidDiagram(concepts);
             }
+            
+            // Update the edited map with processed data
+            const processedMap = {
+                ...conceptMap,
+                concepts,
+                mermaidDiagram
+            };
+            
+            setEditedMap(processedMap);
         }
     }, [conceptMap]);
 
@@ -201,20 +225,38 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
         }
     }, [selectedNode]);
 
+    // Enhanced validation function
+    const hasValidConceptData = () => {
+        if (!editedMap) {
+            return false;
+        }
+        
+        if (editedMap.concepts && editedMap.concepts.length > 0) {
+            return true;
+        }
+        
+        if (editedMap.nodes && editedMap.nodes.length > 0) {
+            return true;
+        }
+        
+        if (editedMap.mermaidDiagram) {
+            return true;
+        }
+        
+        return false;
+    };
+
     const handleNodeClick = (nodeId) => {
         if (!isEditing) return;
         
         // Add null checks for editedMap and concepts
         if (!editedMap || !editedMap.concepts || !Array.isArray(editedMap.concepts)) {
-            console.warn('No concepts available for editing');
             return;
         }
         
         const node = editedMap.concepts.find(c => c.id === nodeId);
         if (node) {
             setSelectedNode(node);
-        } else {
-            console.warn(`Node with ID "${nodeId}" not found in concepts.`);
         }
     };
 
@@ -310,8 +352,8 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
     const handleEditToggle = () => {
         if (!isEditing) {
             // Check if we have valid data before enabling editing
-            if (!editedMap || !editedMap.concepts || editedMap.concepts.length === 0) {
-                toast.error('No concept data available for editing');
+            if (!hasValidConceptData()) {
+                toast.error('No concept data available for editing. Please generate a concept map first.');
                 return;
             }
         }
@@ -392,9 +434,43 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
                 </div>
             )}
 
+            {/* No Data Available Fallback */}
+            {!hasValidConceptData() && (
+                <div className="mb-4 p-6 bg-base-200 rounded-lg border border-base-300">
+                    <div className="text-center space-y-4">
+                        <svg className="w-16 h-16 mx-auto text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <div>
+                            <h3 className="text-lg font-semibold text-gray-700 mb-2">No Concept Map Available</h3>
+                            <p className="text-gray-600 mb-4">
+                                This board doesn't have a concept map yet. To create one, you'll need to generate a concept map from text input.
+                            </p>
+                            <div className="flex justify-center gap-2">
+                                <a href="/dashboard" className="btn btn-primary btn-sm">
+                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                                    </svg>
+                                    Create New Map
+                                </a>
+                                <button 
+                                    onClick={() => window.location.reload()} 
+                                    className="btn btn-outline btn-sm"
+                                >
+                                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                    Refresh Page
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className={`lg:col-span-2 ${isEditing ? '' : 'lg:col-span-3'}`}>
-                    {showRenderer && (
+                    {showRenderer && hasValidConceptData() && (
                         <MermaidRenderer 
                             key={editedMap?.mermaidDiagram || 'empty-diagram'} 
                             diagram={editedMap?.mermaidDiagram}
@@ -403,20 +479,9 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
                         />
                     )}
                 </div>
-                {isEditing && (
+                {isEditing && hasValidConceptData() && (
                     <div className="edit-panel p-6 rounded-lg">
                         <h3 className="text-xl font-bold mb-4 border-b pb-2">Edit Concept</h3>
-                        
-                        {(!editedMap || !editedMap.concepts || editedMap.concepts.length === 0) && (
-                            <div className="flex items-center justify-center h-full text-center text-gray-500">
-                                <div className="space-y-2">
-                                    <svg className="w-12 h-12 mx-auto text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                                    </svg>
-                                    <p className="text-sm">No concept data available for editing</p>
-                                </div>
-                            </div>
-                        )}
                         
                         {editedMap && editedMap.concepts && editedMap.concepts.length > 0 && !selectedNode && (
                             <div className="flex items-center justify-center h-full text-center text-gray-500">
