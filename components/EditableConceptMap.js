@@ -106,6 +106,8 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
     const [richTextContent, setRichTextContent] = useState('');
     const [selectedText, setSelectedText] = useState('');
     const lastDiagramRef = useRef(editedMap?.mermaidDiagram);
+    const [overlayPosition, setOverlayPosition] = useState(null);
+    const [showInlineEditor, setShowInlineEditor] = useState(false);
 
     // Debug logging to understand data structure
     useEffect(() => {
@@ -248,15 +250,24 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
 
     const handleNodeClick = (nodeId) => {
         if (!isEditing) return;
-        
-        // Add null checks for editedMap and concepts
-        if (!editedMap || !editedMap.concepts || !Array.isArray(editedMap.concepts)) {
-            return;
-        }
-        
+        if (!editedMap || !editedMap.concepts || !Array.isArray(editedMap.concepts)) return;
         const node = editedMap.concepts.find(c => c.id === nodeId);
         if (node) {
             setSelectedNode(node);
+            // Find the SVG node and calculate its position
+            const svgNode = document.getElementById(nodeId);
+            if (svgNode) {
+                const bbox = svgNode.getBoundingClientRect();
+                const container = document.querySelector('.concept-map-container');
+                const containerBox = container ? container.getBoundingClientRect() : { left: 0, top: 0 };
+                setOverlayPosition({
+                    left: bbox.left - containerBox.left,
+                    top: bbox.top - containerBox.top,
+                    width: bbox.width,
+                    height: bbox.height
+                });
+                setShowInlineEditor(true);
+            }
         }
     };
 
@@ -361,6 +372,23 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
         setIsEditing(!isEditing);
         setSelectedNode(null);
         setShowCodeEditor(false);
+    };
+
+    // Add handler for inline edit save
+    const handleInlineEditSave = (value) => {
+        handleNodeEdit('text', value);
+        setShowInlineEditor(false);
+    };
+
+    // Add handler for overlay blur/Enter
+    const handleInlineEditBlur = (e) => {
+        handleInlineEditSave(e.target.value);
+    };
+    const handleInlineEditKeyDown = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            handleInlineEditSave(e.target.value);
+        }
     };
 
     return (
@@ -601,6 +629,36 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
                     </div>
                 )}
             </div>
+
+            {/* Inline Editor Overlay */}
+            {isEditing && showInlineEditor && overlayPosition && selectedNode && (
+                <div
+                    className="absolute z-50"
+                    style={{
+                        left: overlayPosition.left,
+                        top: overlayPosition.top,
+                        width: overlayPosition.width,
+                        height: overlayPosition.height,
+                        pointerEvents: 'auto',
+                    }}
+                >
+                    {/* Formatting toolbar (optional, can reuse existing logic) */}
+                    <div className="flex gap-1 mb-1">
+                        <button type="button" className="btn btn-xs btn-ghost" onClick={() => applyFormatting('bold')}><b>B</b></button>
+                        <button type="button" className="btn btn-xs btn-ghost" onClick={() => applyFormatting('underline')}><u>U</u></button>
+                        <button type="button" className="btn btn-xs btn-ghost" onClick={() => applyFormatting('highlight')}><span style={{ background: '#ffe066' }}>H</span></button>
+                    </div>
+                    <textarea
+                        className="textarea textarea-bordered w-full h-full text-base font-sans bg-white bg-opacity-90 shadow-lg rounded"
+                        value={richTextContent}
+                        onChange={handleRichTextChange}
+                        onBlur={handleInlineEditBlur}
+                        onKeyDown={handleInlineEditKeyDown}
+                        autoFocus
+                        style={{ resize: 'none', minHeight: 40 }}
+                    />
+                </div>
+            )}
         </div>
     );
 } 

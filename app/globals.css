@@ -40,27 +40,40 @@
   /* Ensure smooth rendering */
   shape-rendering: geometricPrecision;
   text-rendering: optimizeLegibility;
+  font-family: 'Inter', 'Nunito', system-ui, sans-serif !important;
 }
 
 /* Mermaid-compatible hover effects - targeting specific SVG elements */
-.concept-map-container .node rect {
+.concept-map-container .node rect,
+.concept-map-container .node ellipse {
   cursor: pointer;
   /* Remove transitions to prevent flickering */
   /* Ensure proper rendering */
   shape-rendering: geometricPrecision;
+  filter: drop-shadow(0 2px 8px rgba(60,60,60,0.10));
+  rx: 18px !important;
+  ry: 18px !important;
+  stroke-width: 3px !important;
+  transition: filter 0.2s, transform 0.2s, stroke 0.2s;
+  padding: 16px !important;
 }
 
-.concept-map-container .node:hover rect {
+.concept-map-container .node:hover rect,
+.concept-map-container .node:hover ellipse {
   /* Use fill-opacity instead of opacity to avoid affecting text */
   fill-opacity: 0.9;
   /* Smooth transition for fill-opacity only */
   transition: fill-opacity 0.15s ease-out;
+  filter: drop-shadow(0 4px 16px rgba(99,102,241,0.18));
+  stroke: #6366f1 !important;
+  transform: scale(1.03);
 }
 
-.concept-map-container .node.selected rect {
-  stroke: #3b82f6 !important;
-  stroke-width: 3px !important;
-  fill-opacity: 1;
+.concept-map-container .node.selected rect,
+.concept-map-container .node.selected ellipse {
+  stroke: #6366f1 !important;
+  filter: drop-shadow(0 0 0 4px #6366f133);
+  transform: scale(1.04);
 }
 
 /* Handle text elements within nodes */
@@ -68,31 +81,49 @@
   pointer-events: none; /* Prevent text from interfering with hover */
   /* Ensure text remains crisp */
   text-rendering: optimizeLegibility;
+  font-size: 1.08rem !important;
+  font-family: 'Inter', 'Nunito', system-ui, sans-serif !important;
+  fill: #22223b !important;
+  letter-spacing: 0.01em;
+  font-weight: 500;
 }
 
 /* Handle edge/connection hover effects */
-.concept-map-container .edgePath {
+.concept-map-container .edgePath path {
   cursor: pointer;
   /* Smooth transitions for edges */
-  transition: stroke-opacity 0.15s ease-out;
+  transition: stroke 0.2s;
+  stroke: #a3a3a3 !important;
+  stroke-width: 2.2px !important;
+  stroke-linecap: round;
+  marker-end: url(#arrowhead);
 }
 
-.concept-map-container .edgePath:hover {
-  stroke-opacity: 0.7;
+.concept-map-container .edgePath:hover path {
+  stroke: #6366f1 !important;
+  stroke-width: 2.8px !important;
 }
 
 /* Handle edge labels */
 .concept-map-container .edgeLabel {
   pointer-events: none; /* Prevent label interference */
+  font-size: 0.98rem !important;
+  font-family: 'Inter', 'Nunito', system-ui, sans-serif !important;
+  fill: #6366f1 !important;
+  font-weight: 600;
+  background: #f8fafc;
+  border-radius: 6px;
+  padding: 2px 8px;
 }
 
 /* Ensure proper z-index for interactive elements */
 .concept-map-container .node {
   z-index: 1;
+  transition: z-index 0.2s;
 }
 
 .concept-map-container .node:hover {
-  z-index: 2;
+  z-index: 5;
 }
 
 /* Prevent any unwanted hover effects on non-interactive elements */
@@ -113,7 +144,8 @@
 }
 
 /* Only enable transitions for specific hover effects */
-.concept-map-container .node:hover rect {
+.concept-map-container .node:hover rect,
+.concept-map-container .node:hover ellipse {
   transition: fill-opacity 0.15s ease-out;
 }
 
@@ -130,6 +162,14 @@
   
   .concept-map-container svg {
     max-width: 95%;
+  }
+  
+  .concept-map-container .node text {
+    font-size: 0.98rem !important;
+  }
+  
+  .concept-map-container .edgeLabel {
+    font-size: 0.92rem !important;
   }
 }
 
@@ -297,4 +337,13 @@
     min-width: 2.5rem;
   }
 }
+
+/* Modern Mermaid Concept Map Visual Upgrades */
+.concept-map-container .node rect,
+.concept-map-container .node ellipse {
+  /* Subtle pastel gradient backgrounds for modern look */
+  fill: url(#modernGradient) !important;
+}
+
+/* Mermaid SVG gradient definition (inject via JS if needed) */
 
