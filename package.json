@@ -22,6 +22,7 @@
     "compromise": "^14.14.4",
     "fr": "^1.2.2",
     "langchain": "^0.3.27",
+    "lodash.isequal": "^4.5.0",
     "markmap-view": "^0.18.10",
     "mermaid": "^11.6.0",
     "mongodb": "^6.16.0",

@@ -3,78 +3,148 @@
 import { useEffect, useRef, useState } from "react";
 import mermaid from "mermaid";
 import { toast } from "react-hot-toast";
-import { createMermaidDiagram } from '@/services/conceptMapGenerator';
+import { createMermaidDiagram, validateMermaidDiagram } from '@/services/conceptMapGenerator';
+import isEqual from 'lodash.isequal';
 
-function MermaidRenderer({ diagram, onNodeClick, selectedNodeId }) {
+function MermaidRenderer({ diagram, onNodeDoubleClick, onNodeHover, onNodeHoverLeave, selectedNodeId }) {
     const hostRef = useRef(null);
     const [isRendering, setIsRendering] = useState(true);
+    const [renderError, setRenderError] = useState(null);
+    const [hoveredNodeId, setHoveredNodeId] = useState(null);
 
     useEffect(() => {
         if (!hostRef.current || !diagram) return;
-
         let isMounted = true;
         setIsRendering(true);
+        setRenderError(null);
+        
+        // Sanitize the diagram first
+        let sanitizedDiagram = cleanMermaidString(diagram);
+        if (!sanitizedDiagram || sanitizedDiagram.trim() === '') {
+            setRenderError('Empty or invalid diagram after sanitization');
+            setIsRendering(false);
+            return;
+        }
+        
+        // If the diagram doesn't start with 'graph', it's probably invalid
+        if (!sanitizedDiagram.trim().startsWith('graph')) {
+            console.warn('Invalid diagram format, using fallback');
+            sanitizedDiagram = 'graph TD\nErrorNode["Invalid diagram format"]';
+        }
+        
+        // Pre-validate the diagram before rendering
+        try {
+            // If we have a diagram but no concepts, it might be a manually created or legacy diagram
+            // In this case, we'll be more lenient with validation
+            const validation = validateMermaidDiagram(sanitizedDiagram, 'MermaidRenderer');
+            if (!validation.valid) {
+                console.warn('Diagram validation failed, but attempting to render anyway:', validation.error);
+                // Don't fail immediately - let Mermaid try to parse it
+            }
+        } catch (validationError) {
+            console.error('Validation error:', validationError);
+            // Don't fail immediately - let Mermaid try to parse it
+        }
+        
+        try {
+            mermaid.render('concept-map', sanitizedDiagram)
+                .then(({ svg }) => {
+                    if (isMounted && hostRef.current) {
+                        hostRef.current.innerHTML = svg;
 
-        mermaid.render('concept-map', diagram)
-            .then(({ svg }) => {
-                if (isMounted && hostRef.current) {
-                    hostRef.current.innerHTML = svg;
-
-                    // Enhanced event handling for Mermaid elements
-                    const nodes = hostRef.current.querySelectorAll('.node');
-                    
-                    nodes.forEach(node => {
-                        // Add click listener to the node group
-                        node.addEventListener('click', (e) => {
-                            // Prevent event bubbling to avoid conflicts
-                            e.stopPropagation();
-                            onNodeClick(node.id);
-                        });
+                        // Enhanced event handling for Mermaid elements
+                        const nodes = hostRef.current.querySelectorAll('.node');
                         
-                        // Add visual feedback for selected node
-                        if (node.id === selectedNodeId) {
-                            node.classList.add('selected');
-                        } else {
-                            node.classList.remove('selected');
+                        nodes.forEach(node => {
+                            // Add click listener to the node group
+                            node.addEventListener('click', (e) => {
+                                // Prevent event bubbling to avoid conflicts
+                                e.stopPropagation();
+                                onNodeDoubleClick(node.id);
+                            });
+                            
+                            // Add visual feedback for selected node
+                            if (node.id === selectedNodeId) {
+                                node.classList.add('selected');
+                            } else {
+                                node.classList.remove('selected');
+                            }
+
+                            // Prevent text selection on nodes
+                            const textElements = node.querySelectorAll('text');
+                            textElements.forEach(text => {
+                                text.style.userSelect = 'none';
+                                text.style.pointerEvents = 'none';
+                            });
+
+                            node.addEventListener('mouseenter', () => {
+                                node.style.transform = 'scale(1.045)';
+                                node.style.boxShadow = '0 4px 16px #b6c7e6';
+                                if (window.__clarimapEditMode) {
+                                    node.style.cursor = 'pointer';
+                                    // Add pencil icon overlay
+                                    let pencil = document.createElement('span');
+                                    pencil.className = 'clarimap-pencil';
+                                    pencil.innerHTML = `<svg width="18" height="18" fill="none" stroke="#2563eb" stroke-width="2" viewBox="0 0 24 24"><path d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-2.828 0L9 13z"/></svg>`;
+                                    pencil.style.position = 'absolute';
+                                    pencil.style.right = '8px';
+                                    pencil.style.top = '8px';
+                                    pencil.style.pointerEvents = 'none';
+                                    pencil.style.zIndex = '10';
+                                    node.appendChild(pencil);
+                                    // Tooltip
+                                    node.setAttribute('title', 'Double-click to edit');
+                                }
+                            });
+                            node.addEventListener('mouseleave', () => {
+                                node.style.transform = '';
+                                node.style.boxShadow = '';
+                                // Remove pencil icon
+                                let pencil = node.querySelector('.clarimap-pencil');
+                                if (pencil) pencil.remove();
+                                node.removeAttribute('title');
+                            });
+                            // Double-click to edit
+                            node.addEventListener('dblclick', (e) => {
+                                e.stopPropagation();
+                                if (!isRendering) return;
+                                onNodeDoubleClick(node.id);
+                            });
+                        });
+
+                        // Handle edge interactions
+                        const edgePaths = hostRef.current.querySelectorAll('.edgePath');
+                        edgePaths.forEach(edge => {
+                            edge.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                // Optional: Add edge click handling here
+                            });
+                        });
+
+                        // Prevent unwanted text selection on the entire diagram
+                        const svgElement = hostRef.current.querySelector('svg');
+                        if (svgElement) {
+                            svgElement.style.userSelect = 'none';
+                            svgElement.style.webkitUserSelect = 'none';
+                            svgElement.style.mozUserSelect = 'none';
+                            svgElement.style.msUserSelect = 'none';
                         }
-
-                        // Prevent text selection on nodes
-                        const textElements = node.querySelectorAll('text');
-                        textElements.forEach(text => {
-                            text.style.userSelect = 'none';
-                            text.style.pointerEvents = 'none';
-                        });
-                    });
-
-                    // Handle edge interactions
-                    const edgePaths = hostRef.current.querySelectorAll('.edgePath');
-                    edgePaths.forEach(edge => {
-                        edge.addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            // Optional: Add edge click handling here
-                        });
-                    });
-
-                    // Prevent unwanted text selection on the entire diagram
-                    const svgElement = hostRef.current.querySelector('svg');
-                    if (svgElement) {
-                        svgElement.style.userSelect = 'none';
-                        svgElement.style.webkitUserSelect = 'none';
-                        svgElement.style.mozUserSelect = 'none';
-                        svgElement.style.msUserSelect = 'none';
                     }
-                }
-            })
-            .catch((err) => {
-                console.error("Mermaid render error:", err);
-                toast.error('Error rendering concept map');
-            })
-            .finally(() => {
-                if (isMounted) {
-                    setIsRendering(false);
-                }
-            });
-
+                })
+                .catch((err) => {
+                    console.error('Mermaid render error:', err, '\nDiagram:', sanitizedDiagram);
+                    setRenderError('Mermaid render error: ' + err.message);
+                })
+                .finally(() => {
+                    if (isMounted) {
+                        setIsRendering(false);
+                    }
+                });
+        } catch (err) {
+            console.error('Mermaid render error (sync):', err, '\nDiagram:', sanitizedDiagram);
+            setRenderError('Mermaid render error: ' + err.message);
+            setIsRendering(false);
+        }
         return () => {
             isMounted = false;
             if (hostRef.current) {
@@ -82,7 +152,20 @@ function MermaidRenderer({ diagram, onNodeClick, selectedNodeId }) {
                 hostRef.current.innerHTML = '';
             }
         };
-    }, [diagram, onNodeClick, selectedNodeId]);
+    }, [diagram, onNodeDoubleClick, onNodeHover, onNodeHoverLeave, selectedNodeId]);
+
+    if (renderError) {
+        return (
+            <div className="bg-red-100 text-red-700 p-4 rounded-lg border border-red-300 mt-4">
+                <strong>Error rendering concept map:</strong>
+                <pre className="whitespace-pre-wrap text-xs mt-2">{renderError}</pre>
+                <details className="mt-2">
+                    <summary>Show Mermaid code</summary>
+                    <pre className="whitespace-pre-wrap text-xs bg-gray-100 p-2 rounded">{diagram}</pre>
+                </details>
+            </div>
+        );
+    }
 
     return (
         <div className="concept-map-container bg-base-100 p-4 rounded-lg w-full overflow-auto min-h-[500px] min-w-[350px]">
@@ -94,6 +177,12 @@ function MermaidRenderer({ diagram, onNodeClick, selectedNodeId }) {
             <div ref={hostRef} className="w-full h-full" />
         </div>
     );
+}
+
+// Utility: Remove all non-ASCII and invalid characters from any Mermaid string (diagram, style, etc.)
+// Regex for future validation: /[^\x20-\x7E]/g (matches any non-ASCII printable character)
+function cleanMermaidString(str) {
+    return (str || '').replace(/[^\x20-\x7E]/g, '');
 }
 
 export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
@@ -108,6 +197,8 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
     const lastDiagramRef = useRef(editedMap?.mermaidDiagram);
     const [overlayPosition, setOverlayPosition] = useState(null);
     const [showInlineEditor, setShowInlineEditor] = useState(false);
+    const [editingNodeId, setEditingNodeId] = useState(null);
+    const [hoveredNodeId, setHoveredNodeId] = useState(null);
 
     // Debug logging to understand data structure
     useEffect(() => {
@@ -116,7 +207,9 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
 
     // Ensure editedMap is always in sync with conceptMap prop
     useEffect(() => {
-        setEditedMap(conceptMap);
+        if (!isEqual(conceptMap, editedMap)) {
+            setEditedMap(conceptMap);
+        }
     }, [conceptMap]);
 
     // Initialize Mermaid only once
@@ -135,11 +228,13 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
 
     // Enhanced data processing and validation
     useEffect(() => {
-        if (conceptMap) {
+        if (!isEqual(conceptMap, editedMap)) {
+            // Only process if conceptMap is different from editedMap
             let concepts = conceptMap.concepts;
             let mermaidDiagram = conceptMap.mermaidDiagram;
             
-            // If only nodes exist, convert them to concepts format
+            console.log('Processing conceptMap:', { conceptMap, concepts, mermaidDiagram });
+            
             if (!concepts && conceptMap.nodes) {
                 const allConnections = conceptMap.connections || [];
                 concepts = conceptMap.nodes.map(node => {
@@ -158,23 +253,11 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
                         class: 'main-idea',
                     };
                 });
+                console.log('Created concepts from nodes:', concepts);
             }
             
-            // If no concepts or nodes, but we have a mermaidDiagram, try to extract concepts
-            if ((!concepts || concepts.length === 0) && mermaidDiagram) {
-                // Create a basic concept from the diagram
-                concepts = [{
-                    id: 'extracted-concept',
-                    text: 'Concept from Diagram',
-                    type: 'main',
-                    definition: 'Concept extracted from existing diagram',
-                    connections: [],
-                    class: 'main-idea'
-                }];
-            }
-            
-            // If still no concepts, create a basic structure
-            if (!concepts || concepts.length === 0) {
+            // Only create fallback concepts if we have no concepts AND no mermaidDiagram
+            if ((!concepts || concepts.length === 0) && !mermaidDiagram) {
                 concepts = [{
                     id: 'default-concept',
                     text: 'Main Concept',
@@ -183,23 +266,29 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
                     connections: [],
                     class: 'main-idea'
                 }];
+                console.log('Created fallback concept:', concepts);
             }
             
-            // Generate mermaid diagram if missing
+            // Only generate mermaidDiagram if we don't have one but we have concepts
             if (!mermaidDiagram && concepts && concepts.length > 0) {
+                console.log('Generating mermaidDiagram from concepts:', concepts);
                 mermaidDiagram = createMermaidDiagram(concepts);
+                console.log('Generated mermaidDiagram:', mermaidDiagram);
             }
             
-            // Update the edited map with processed data
             const processedMap = {
                 ...conceptMap,
                 concepts,
                 mermaidDiagram
             };
             
-            setEditedMap(processedMap);
+            console.log('Final processedMap:', processedMap);
+            
+            if (!isEqual(processedMap, editedMap)) {
+                setEditedMap(processedMap);
+            }
         }
-    }, [conceptMap]);
+    }, [conceptMap, editedMap]);
 
     // When the diagram changes, unmount the renderer for a tick before remounting
     useEffect(() => {
@@ -248,31 +337,36 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
         return false;
     };
 
-    const handleNodeClick = (nodeId) => {
+    const handleNodeClick = (nodeId, forceEdit = false) => {
         if (!isEditing) return;
         if (!editedMap || !editedMap.concepts || !Array.isArray(editedMap.concepts)) return;
         const node = editedMap.concepts.find(c => c.id === nodeId);
         if (node) {
             setSelectedNode(node);
-            // Find the SVG node and calculate its position
-            const svgNode = document.getElementById(nodeId);
-            if (svgNode) {
-                const bbox = svgNode.getBoundingClientRect();
-                const container = document.querySelector('.concept-map-container');
-                const containerBox = container ? container.getBoundingClientRect() : { left: 0, top: 0 };
-                setOverlayPosition({
-                    left: bbox.left - containerBox.left,
-                    top: bbox.top - containerBox.top,
-                    width: bbox.width,
-                    height: bbox.height
-                });
-                setShowInlineEditor(true);
+            if (forceEdit) {
+                // Find the SVG node and calculate its position
+                const svgNode = document.getElementById(nodeId);
+                if (svgNode) {
+                    const bbox = svgNode.getBoundingClientRect();
+                    const container = document.querySelector('.concept-map-container');
+                    const containerBox = container ? container.getBoundingClientRect() : { left: 0, top: 0 };
+                    setOverlayPosition({
+                        left: bbox.left - containerBox.left,
+                        top: bbox.top - containerBox.top,
+                        width: bbox.width,
+                        height: bbox.height
+                    });
+                    setShowInlineEditor(true);
+                }
             }
         }
     };
 
     const handleNodeEdit = (field, value) => {
-        if (!selectedNode || !editedMap || !editedMap.concepts) return;
+        if (!selectedNode || !editedMap || !editedMap.concepts) {
+            toast.error('No node selected or map data missing.');
+            return;
+        }
         
         const updatedConcepts = editedMap.concepts.map(concept =>
             concept.id === selectedNode.id
@@ -333,10 +427,23 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
 
     const handleCodeEdit = () => {
         try {
-            // Validate the Mermaid code
-            mermaid.parse(mermaidCode);
+            // First, validate the Mermaid code using our comprehensive validator
+            const validation = validateMermaidDiagram(mermaidCode, 'Manual code edit');
             
-            // Update the diagram
+            if (!validation.valid) {
+                toast.error('Invalid Mermaid syntax: ' + validation.error);
+                return;
+            }
+
+            // Additional Mermaid parse check for extra safety
+            try {
+                mermaid.parse(mermaidCode);
+            } catch (parseError) {
+                toast.error('Mermaid parse error: ' + parseError.message);
+                return;
+            }
+            
+            // Update the diagram only if validation passes
             setEditedMap(prev => ({
                 ...prev,
                 mermaidDiagram: mermaidCode
@@ -344,7 +451,8 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
             
             toast.success('Diagram updated successfully');
         } catch (error) {
-            toast.error('Invalid Mermaid syntax: ' + error.message);
+            console.error('Error in handleCodeEdit:', error);
+            toast.error('Error updating diagram: ' + error.message);
         }
     };
 
@@ -361,14 +469,10 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
     };
 
     const handleEditToggle = () => {
-        if (!isEditing) {
-            // Check if we have valid data before enabling editing
-            if (!hasValidConceptData()) {
-                toast.error('No concept data available for editing. Please generate a concept map first.');
-                return;
-            }
+        if (!hasValidConceptData()) {
+            toast.error('No concept data available for editing. Please generate a concept map first.');
+            return;
         }
-        
         setIsEditing(!isEditing);
         setSelectedNode(null);
         setShowCodeEditor(false);
@@ -378,6 +482,7 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
     const handleInlineEditSave = (value) => {
         handleNodeEdit('text', value);
         setShowInlineEditor(false);
+        setEditingNodeId(null);
     };
 
     // Add handler for overlay blur/Enter
@@ -391,6 +496,57 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
         }
     };
 
+    // Add outside click handler to close overlay
+    useEffect(() => {
+        if (!showInlineEditor) return;
+        const handleClick = (e) => {
+            if (e.target.closest('.inline-editor-overlay')) return;
+            setShowInlineEditor(false);
+            setEditingNodeId(null);
+        };
+        document.addEventListener('mousedown', handleClick);
+        return () => document.removeEventListener('mousedown', handleClick);
+    }, [showInlineEditor]);
+
+    const handleNodeDoubleClick = (nodeId) => {
+        if (!isEditing) return;
+        if (!editedMap || !editedMap.concepts) {
+            toast.error('No concept map data available.');
+            return;
+        }
+        const node = document.getElementById(nodeId);
+        if (!node) {
+            toast.error('Node not found in diagram.');
+            return;
+        }
+        const bbox = node.getBoundingClientRect();
+        const container = document.querySelector('.concept-map-container');
+        if (!container) {
+            toast.error('Diagram container not found.');
+            return;
+        }
+        const containerBox = container.getBoundingClientRect();
+        setOverlayPosition({
+            left: bbox.left - containerBox.left,
+            top: bbox.top - containerBox.top,
+            width: bbox.width,
+            height: bbox.height
+        });
+        setEditingNodeId(nodeId);
+        setShowInlineEditor(true);
+        setSelectedNode(editedMap.concepts.find(c => c.id === nodeId));
+    };
+    const handleNodeHover = (nodeId) => setHoveredNodeId(nodeId);
+    const handleNodeHoverLeave = () => setHoveredNodeId(null);
+
+    // In the render, before using selectedNode.position, add a null check and fallback
+    const safePosition = selectedNode && selectedNode.position
+        ? selectedNode.position
+        : { left: 0, top: 0, width: 0, height: 0 };
+
+    // In EditableConceptMap, set window.__clarimapEditMode = isEditing; in a useEffect
+    useEffect(() => { window.__clarimapEditMode = isEditing; }, [isEditing]);
+
     return (
         <div className="w-full">
             <div className="flex justify-end mb-4 gap-2">
@@ -399,7 +555,7 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
                     <button
                         onClick={handleEditToggle}
                         className={`btn ${isEditing ? 'btn-warning' : 'btn-primary'}`}
-                        disabled={isSaving}
+                        disabled={isSaving || !hasValidConceptData()}
                     >
                         {isEditing ? (
                             <>
@@ -500,9 +656,11 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
                 <div className={`lg:col-span-2 ${isEditing ? '' : 'lg:col-span-3'}`}>
                     {showRenderer && hasValidConceptData() && (
                         <MermaidRenderer 
-                            key={editedMap?.mermaidDiagram || 'empty-diagram'} 
-                            diagram={editedMap?.mermaidDiagram}
-                            onNodeClick={handleNodeClick}
+                            key={cleanMermaidString(editedMap?.mermaidDiagram) || 'empty-diagram'}
+                            diagram={cleanMermaidString(editedMap?.mermaidDiagram)}
+                            onNodeDoubleClick={handleNodeDoubleClick}
+                            onNodeHover={handleNodeHover}
+                            onNodeHoverLeave={handleNodeHoverLeave}
                             selectedNodeId={selectedNode?.id}
                         />
                     )}
@@ -633,23 +791,22 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
             {/* Inline Editor Overlay */}
             {isEditing && showInlineEditor && overlayPosition && selectedNode && (
                 <div
-                    className="absolute z-50"
+                    className="inline-editor-overlay absolute z-50 bg-white rounded-2xl shadow-2xl border border-blue-200 p-2 flex flex-col gap-1"
                     style={{
-                        left: overlayPosition.left,
-                        top: overlayPosition.top,
-                        width: overlayPosition.width,
-                        height: overlayPosition.height,
+                        left: safePosition.left,
+                        top: safePosition.top,
+                        width: safePosition.width,
+                        height: safePosition.height,
                         pointerEvents: 'auto',
                     }}
                 >
-                    {/* Formatting toolbar (optional, can reuse existing logic) */}
                     <div className="flex gap-1 mb-1">
                         <button type="button" className="btn btn-xs btn-ghost" onClick={() => applyFormatting('bold')}><b>B</b></button>
                         <button type="button" className="btn btn-xs btn-ghost" onClick={() => applyFormatting('underline')}><u>U</u></button>
                         <button type="button" className="btn btn-xs btn-ghost" onClick={() => applyFormatting('highlight')}><span style={{ background: '#ffe066' }}>H</span></button>
                     </div>
                     <textarea
-                        className="textarea textarea-bordered w-full h-full text-base font-sans bg-white bg-opacity-90 shadow-lg rounded"
+                        className="textarea textarea-bordered w-full h-full text-base font-sans bg-white bg-opacity-95 shadow-md rounded-2xl"
                         value={richTextContent}
                         onChange={handleRichTextChange}
                         onBlur={handleInlineEditBlur}
@@ -657,6 +814,26 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
                         autoFocus
                         style={{ resize: 'none', minHeight: 40 }}
                     />
+                </div>
+            )}
+
+            {/* Highlight key words in node text */}
+            {isEditing && selectedNode && (
+                <div className="absolute z-40 pointer-events-none" style={{ left: safePosition.left, top: safePosition.top, width: safePosition.width, height: safePosition.height }}>
+                    <span className="inline-block align-middle mr-1">
+                        {selectedNode.text.split(' ').map((word, index) => (
+                            <em key={index}>{word} </em>
+                        ))}
+                    </span>
+                </div>
+            )}
+
+            {/* Highlight hovered node */}
+            {isEditing && hoveredNodeId && (
+                <div className="absolute z-40 pointer-events-none" style={{ left: safePosition.left, top: safePosition.top, width: safePosition.width, height: safePosition.height }}>
+                    <span className="inline-block align-middle mr-1">
+                        <svg className="w-5 h-5 text-yellow-500 drop-shadow" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                    </span>
                 </div>
             )}
         </div>

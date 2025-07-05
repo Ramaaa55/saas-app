@@ -21,11 +21,37 @@ const LANGDETECT_API_URL = 'https://api.languagedetector.com/v1/detect';
  * @returns {string} The escaped string suitable for Mermaid.
  */
 function escapeMermaidText(text) {
-    let escapedText = text;
-    // First, escape backslashes, so we don't accidentally double-escape a later backslash from a quote.
+    let escapedText = text || '';
+    
+    // Remove all HTML tags first
+    escapedText = escapedText.replace(/<[^>]*>/g, '');
+    
+    // Remove specific problematic characters that cause lexical errors
+    // But be more selective - only remove characters that are truly problematic
+    escapedText = escapedText.replace(/[`~!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/g, ' ');
+    
+    // Remove any stray semicolons, newlines, or other problematic characters
+    escapedText = escapedText.replace(/[;\n\r\t]/g, ' ');
+    
+    // Remove multiple spaces and trim
+    escapedText = escapedText.replace(/\s+/g, ' ').trim();
+    
+    // Fallback for empty or invalid text
+    if (!escapedText || escapedText.length === 0) {
+        escapedText = 'Node';
+    }
+    
+    // Ensure the text is not too long (Mermaid has limits)
+    if (escapedText.length > 100) {
+        escapedText = escapedText.substring(0, 97) + '...';
+    }
+    
+    // Escape backslashes first (must be done before escaping quotes)
     escapedText = escapedText.replace(/\\/g, '\\\\');
-    // Then, escape double quotes.
+    
+    // Escape double quotes
     escapedText = escapedText.replace(/"/g, '\\"');
+    
     return escapedText;
 }
 
@@ -315,44 +341,334 @@ async function validateConceptMap(conceptMap) {
     };
 }
 
+// Utility: Remove all non-ASCII and invalid characters from Mermaid style definitions
+// Regex for future validation: /[^\x20-\x7E]/g (matches any non-ASCII printable character)
+function sanitizeMermaidStyle(style) {
+    return (style || '').replace(/[^\x20-\x7E]/g, '');
+}
+
+// Utility: Remove all non-ASCII and invalid characters from any Mermaid string (diagram, style, etc.)
+// Regex for future validation: /[^\x20-\x7E]/g (matches any non-ASCII printable character)
+function cleanMermaidString(str) {
+    if (!str || typeof str !== 'string') {
+        return '';
+    }
+    
+    let cleaned = str;
+    
+    // Remove only the most problematic characters that cause lexical errors
+    cleaned = cleaned.replace(/[`~!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/g, ' ');
+    
+    // Remove control characters and newlines
+    cleaned = cleaned.replace(/[\x00-\x1F\x7F]/g, ' ');
+    
+    // Remove multiple spaces and trim
+    cleaned = cleaned.replace(/\s+/g, ' ').trim();
+    
+    return cleaned;
+}
+
+// Dev-only Mermaid validator (for future use):
+// function validateMermaidSyntax(diagram) {
+//     const lines = diagram.split('\n');
+//     let seenNodeOrEdge = false;
+//     for (const line of lines) {
+//         if (line.trim().startsWith('classDef')) {
+//             if (!seenNodeOrEdge) {
+//                 console.warn('Mermaid syntax warning: classDef appears before nodes/edges.');
+//                 return false;
+//             }
+//         }
+//         if (line.includes('-->') || line.match(/\["/)) {
+//             seenNodeOrEdge = true;
+//         }
+//     }
+//     return true;
+// }
+
+function isValidMermaidId(id) {
+  return typeof id === 'string' && /^[a-zA-Z0-9_\-]+$/.test(id) && id.length > 0;
+}
+function isValidMermaidLabel(label) {
+  return typeof label === 'string' && !label.includes('"') && !label.includes('\n');
+}
+
+function validateMermaidDiagram(diagram, inputText) {
+  if (!diagram || typeof diagram !== 'string') {
+    return { valid: false, error: 'Invalid diagram: must be a non-empty string' };
+  }
+
+  const lines = diagram.split('\n');
+  let hasGraph = false;
+  let seenNodeOrEdge = false;
+  let seenClassDefOrStyle = false;
+  let nodeIds = new Set();
+  let error = null;
+
+  // Check for empty or whitespace-only diagram
+  if (lines.length === 0 || lines.every(line => !line.trim())) {
+    return { valid: false, error: 'Empty diagram' };
+  }
+
+  lines.forEach((line, idx) => {
+    const trimmedLine = line.trim();
+    
+    // Skip empty lines and comments
+    if (!trimmedLine || trimmedLine.startsWith('%%')) {
+      return;
+    }
+
+    // Check for graph declaration
+    if (trimmedLine.startsWith('graph')) {
+      if (hasGraph) {
+        error = `Multiple graph declarations (line ${idx + 1})`;
+        return;
+      }
+      hasGraph = true;
+      if (!/^graph\s+(TD|LR|RL|BT|TB)/.test(trimmedLine)) {
+        error = `Invalid graph direction on line ${idx + 1}: ${trimmedLine}`;
+        return;
+      }
+    } 
+    // Check for node definitions
+    else if (trimmedLine.match(/^[a-zA-Z0-9_\-]+\s*\[".*"\]/)) {
+      seenNodeOrEdge = true;
+      const nodeMatch = trimmedLine.match(/^([a-zA-Z0-9_\-]+)\s*\["(.*)"\]/);
+      if (nodeMatch) {
+        const nodeId = nodeMatch[1];
+        const nodeText = nodeMatch[2];
+        
+        // Check for duplicate node IDs
+        if (nodeIds.has(nodeId)) {
+          error = `Duplicate node ID '${nodeId}' on line ${idx + 1}`;
+          return;
+        }
+        nodeIds.add(nodeId);
+        
+        // Check for invalid node ID
+        if (!/^[a-zA-Z0-9_\-]+$/.test(nodeId)) {
+          error = `Invalid node ID '${nodeId}' on line ${idx + 1}: only letters, numbers, hyphens, and underscores allowed`;
+          return;
+        }
+        
+        // Check for empty or problematic node text
+        if (!nodeText || nodeText.length === 0) {
+          error = `Empty node text on line ${idx + 1}`;
+          return;
+        }
+      } else {
+        error = `Malformed node definition on line ${idx + 1}: ${trimmedLine}`;
+        return;
+      }
+    }
+    // Check for edge definitions
+    else if (trimmedLine.includes('-->')) {
+      seenNodeOrEdge = true;
+      
+      // Validate edge syntax
+      const edgePatterns = [
+        /^([a-zA-Z0-9_\-]+)\s*-->\s*([a-zA-Z0-9_\-]+)$/, // Simple edge
+        /^([a-zA-Z0-9_\-]+)\s*-->\|([^|]*)\|\s*([a-zA-Z0-9_\-]+)$/ // Edge with label
+      ];
+      
+      let validEdge = false;
+      for (const pattern of edgePatterns) {
+        const match = trimmedLine.match(pattern);
+        if (match) {
+          const fromId = match[1];
+          const toId = match[3] || match[2];
+          
+          // Check if source node exists
+          if (!nodeIds.has(fromId)) {
+            error = `Edge references non-existent source node '${fromId}' on line ${idx + 1}`;
+            return;
+          }
+          
+          // Check if target node exists
+          if (!nodeIds.has(toId)) {
+            error = `Edge references non-existent target node '${toId}' on line ${idx + 1}`;
+            return;
+          }
+          
+          validEdge = true;
+          break;
+        }
+      }
+      
+      if (!validEdge) {
+        error = `Malformed edge definition on line ${idx + 1}: ${trimmedLine}`;
+        return;
+      }
+    }
+    // Check for unsupported syntax
+    else if (trimmedLine.startsWith('classDef') || trimmedLine.startsWith('style') || trimmedLine.startsWith('click')) {
+      seenClassDefOrStyle = true;
+      if (!seenNodeOrEdge) {
+        error = `classDef/style/click before nodes/edges (line ${idx + 1})`;
+        return;
+      }
+    }
+    // Unknown line
+    else if (!hasGraph) {
+      error = `Content before graph declaration (line ${idx + 1}): ${trimmedLine}`;
+      return;
+    } else {
+      error = `Unknown syntax on line ${idx + 1}: ${trimmedLine}`;
+      return;
+    }
+  });
+
+  if (!hasGraph) {
+    error = 'Missing graph declaration';
+  } else if (!seenNodeOrEdge) {
+    error = 'No nodes or edges defined';
+  }
+
+  if (error) {
+    console.error('[Mermaid Validator] Error:', error, '\nInput:', inputText, '\nDiagram:', diagram);
+    return { valid: false, error };
+  }
+  
+  return { valid: true };
+}
+
+export { validateMermaidDiagram };
+
 /**
  * Creates a Mermaid.js diagram from the processed concepts
  * @param {Array} concepts - Array of processed concept objects
  * @returns {string} Mermaid.js diagram syntax
  */
-export function createMermaidDiagram(concepts) {
-    try {
-        // Start with graph TD for top-down layout
-        let diagram = 'graph TD\n';
-
-        // Define Mermaid class styles based on the example image aesthetic
-        diagram += `  classDef main-idea fill:#E8F4EA,stroke:#2C5530,stroke-width:2.5px,stroke-dasharray: 8 3;\n`; // Soft Sage Green
-        diagram += `  classDef secondary-idea fill:#F5E6E8,stroke:#8B5A2B,stroke-width:2.5px,stroke-dasharray: 8 3;\n`; // Soft Rose
-        diagram += `  classDef example fill:#E6F3FF,stroke:#2B4C7E,stroke-width:2.5px,stroke-dasharray: 8 3;\n`; // Soft Blue
-        diagram += `  classDef detail fill:#F5F5DC,stroke:#8B7355,stroke-width:2.5px,stroke-dasharray: 8 3;\n`; // Soft Beige
-
-        // Add nodes with their content
-        concepts.forEach(concept => {
-            const escapedText = escapeMermaidText(concept.text);
-            const escapedDefinition = escapeMermaidText(concept.definition);
-            diagram += `  ${concept.id}["${escapedText}"]:::${concept.class || 'main-idea'};\n`;
-        });
-
-        // Add connections with enhanced styling
-        concepts.forEach(concept => {
-            if (concept.connections) {
-                concept.connections.forEach(conn => {
-                    const escapedLabel = escapeMermaidText(conn.label);
-                    diagram += `  ${concept.id} -->|"<span style='font-size: 12px; font-weight: 500; color: #4A5568; background-color: #F7FAFC; padding: 2px 6px; border-radius: 4px; border: 1px solid #E2E8F0;'>${escapedLabel}</span>"| ${conn.targetId};\n`;
-                });
-            }
-        });
-
-        return diagram;
-    } catch (error) {
-        console.error('Error creating Mermaid diagram:', error);
-        return 'graph TD\n  Error["Error creating diagram"]';
+export function createMermaidDiagram(concepts, inputText = '') {
+  try {
+    console.log('createMermaidDiagram called with:', { concepts, inputText });
+    
+    if (!concepts || !Array.isArray(concepts) || concepts.length === 0) {
+      console.warn('No concepts provided for Mermaid diagram');
+      return 'graph TD\nErrorNode["No concepts available"]';
     }
+
+    let lines = ['graph TD'];
+    const validNodeIds = new Set();
+    const processedNodes = [];
+    const processedEdges = [];
+
+    // First pass: collect and validate all nodes
+    for (const concept of concepts) {
+      console.log('Processing concept:', concept);
+      
+      if (!concept || !concept.id) {
+        console.warn('Skipping concept with missing ID:', concept);
+        continue;
+      }
+
+      const id = escapeMermaidText(concept.id);
+      const text = escapeMermaidText(concept.text);
+      
+      console.log('Escaped concept:', { originalId: concept.id, escapedId: id, originalText: concept.text, escapedText: text });
+
+      // Validate node ID
+      if (!isValidMermaidId(id)) {
+        console.warn(`Skipping concept with invalid ID '${concept.id}': ${id}`);
+        continue;
+      }
+
+      // Check for duplicate IDs
+      if (validNodeIds.has(id)) {
+        console.warn(`Skipping duplicate node ID '${id}'`);
+        continue;
+      }
+
+      // Validate node text
+      if (!text || text.length === 0) {
+        console.warn(`Skipping node '${id}' with empty text`);
+        continue;
+      }
+
+      validNodeIds.add(id);
+      processedNodes.push({ id, text });
+      console.log('Added node:', { id, text });
+    }
+
+    console.log('Processed nodes:', processedNodes);
+
+    // If no valid nodes, return error diagram
+    if (processedNodes.length === 0) {
+      console.warn('No valid nodes found for Mermaid diagram');
+      return 'graph TD\nErrorNode["No valid concepts available"]';
+    }
+
+    // Add nodes to diagram
+    for (const node of processedNodes) {
+      lines.push(`${node.id}["${node.text}"]`);
+    }
+
+    // Second pass: collect and validate all edges
+    for (const concept of concepts) {
+      if (!concept || !concept.id || !concept.connections) {
+        continue;
+      }
+
+      const fromId = escapeMermaidText(concept.id);
+      
+      // Skip if source node is not valid
+      if (!validNodeIds.has(fromId)) {
+        continue;
+      }
+
+      for (const conn of concept.connections) {
+        if (!conn || !conn.targetId) {
+          console.warn(`Skipping connection with missing targetId from '${fromId}'`);
+          continue;
+        }
+
+        const toId = escapeMermaidText(conn.targetId);
+        const label = escapeMermaidText(conn.label || 'relates to');
+
+        // Validate target node exists
+        if (!validNodeIds.has(toId)) {
+          console.warn(`Skipping edge from '${fromId}' to non-existent node '${toId}'`);
+          continue;
+        }
+
+        // Validate label
+        if (!isValidMermaidLabel(label)) {
+          console.warn(`Skipping edge with invalid label from '${fromId}' to '${toId}': ${label}`);
+          continue;
+        }
+
+        // Check for self-loops (optional - remove if you want to allow them)
+        if (fromId === toId) {
+          console.warn(`Skipping self-loop for node '${fromId}'`);
+          continue;
+        }
+
+        processedEdges.push({ fromId, toId, label });
+      }
+    }
+
+    // Add edges to diagram
+    for (const edge of processedEdges) {
+      lines.push(`${edge.fromId} -->|${edge.label}| ${edge.toId}`);
+    }
+
+    // Join lines with newlines to ensure proper Mermaid syntax
+    const diagram = lines.join('\n');
+    console.log('Generated diagram:', diagram);
+    
+    // Validate the final diagram
+    const validation = validateMermaidDiagram(diagram, inputText);
+    if (!validation.valid) {
+      console.error('Generated diagram failed validation:', validation.error);
+      return 'graph TD\nErrorNode["Unable to render concept map due to syntax error. Please try again with different input."]';
+    }
+
+    console.log('Successfully generated Mermaid diagram with', processedNodes.length, 'nodes and', processedEdges.length, 'edges');
+    return diagram;
+  } catch (error) {
+    console.error('Error creating Mermaid diagram:', error);
+    return 'graph TD\nErrorNode["Error creating diagram"]';
+  }
 }
 
 /**
@@ -378,7 +694,7 @@ export async function generateConceptMap(input) {
         console.log('Concepts before Mermaid diagram creation:', concepts);
 
         // Generate the Mermaid.js diagram
-        const mermaidDiagram = createMermaidDiagram(concepts);
+        const mermaidDiagram = createMermaidDiagram(concepts, input);
         
         // Create the concept map object with proper structure
         const conceptMap = {

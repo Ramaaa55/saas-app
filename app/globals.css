@@ -30,6 +30,10 @@
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
+  background: #fff !important;
+  border-radius: 1.5rem;
+  box-shadow: 0 2px 16px 0 rgba(60,60,60,0.06);
+  padding: 2rem 1.5rem;
 }
 
 .concept-map-container svg {
@@ -40,7 +44,8 @@
   /* Ensure smooth rendering */
   shape-rendering: geometricPrecision;
   text-rendering: optimizeLegibility;
-  font-family: 'Inter', 'Nunito', system-ui, sans-serif !important;
+  font-family: 'Inter', 'Open Sans', 'Segoe UI', 'Helvetica Neue', Arial, 'sans-serif' !important;
+  background: #fff !important;
 }
 
 /* Mermaid-compatible hover effects - targeting specific SVG elements */
@@ -50,11 +55,12 @@
   /* Remove transitions to prevent flickering */
   /* Ensure proper rendering */
   shape-rendering: geometricPrecision;
-  filter: drop-shadow(0 2px 8px rgba(60,60,60,0.10));
-  rx: 18px !important;
-  ry: 18px !important;
-  stroke-width: 3px !important;
-  transition: filter 0.2s, transform 0.2s, stroke 0.2s;
+  filter: drop-shadow(0 2px 8px rgba(60,60,60,0.08));
+  rx: 24px !important;
+  ry: 24px !important;
+  stroke-width: 2.5px !important;
+  stroke: #e0e7ef !important;
+  transition: filter 0.18s, transform 0.18s, stroke 0.18s;
   padding: 16px !important;
 }
 
@@ -64,16 +70,18 @@
   fill-opacity: 0.9;
   /* Smooth transition for fill-opacity only */
   transition: fill-opacity 0.15s ease-out;
-  filter: drop-shadow(0 4px 16px rgba(99,102,241,0.18));
-  stroke: #6366f1 !important;
-  transform: scale(1.03);
+  filter: drop-shadow(0 6px 18px rgba(52,144,220,0.13));
+  stroke: #60a5fa !important;
+  transform: scale(1.045);
+  z-index: 2;
 }
 
 .concept-map-container .node.selected rect,
 .concept-map-container .node.selected ellipse {
-  stroke: #6366f1 !important;
-  filter: drop-shadow(0 0 0 4px #6366f133);
-  transform: scale(1.04);
+  stroke: #2563eb !important;
+  filter: drop-shadow(0 0 0 6px #bae6fd55);
+  transform: scale(1.06);
+  z-index: 3;
 }
 
 /* Handle text elements within nodes */
@@ -82,38 +90,43 @@
   /* Ensure text remains crisp */
   text-rendering: optimizeLegibility;
   font-size: 1.08rem !important;
-  font-family: 'Inter', 'Nunito', system-ui, sans-serif !important;
-  fill: #22223b !important;
+  font-family: 'Inter', 'Open Sans', 'Segoe UI', 'Helvetica Neue', Arial, 'sans-serif' !important;
+  fill: #23272f !important;
   letter-spacing: 0.01em;
   font-weight: 500;
+  dominant-baseline: middle;
 }
 
 /* Handle edge/connection hover effects */
 .concept-map-container .edgePath path {
   cursor: pointer;
   /* Smooth transitions for edges */
-  transition: stroke 0.2s;
-  stroke: #a3a3a3 !important;
+  transition: stroke 0.18s;
+  stroke: #b6c2d6 !important;
   stroke-width: 2.2px !important;
   stroke-linecap: round;
+  fill: none;
   marker-end: url(#arrowhead);
 }
 
 .concept-map-container .edgePath:hover path {
-  stroke: #6366f1 !important;
+  stroke: #60a5fa !important;
   stroke-width: 2.8px !important;
 }
 
 /* Handle edge labels */
 .concept-map-container .edgeLabel {
   pointer-events: none; /* Prevent label interference */
-  font-size: 0.98rem !important;
-  font-family: 'Inter', 'Nunito', system-ui, sans-serif !important;
-  fill: #6366f1 !important;
+  font-size: 1.05rem !important;
+  font-family: 'Inter', 'Open Sans', 'Segoe UI', 'Helvetica Neue', Arial, 'sans-serif' !important;
+  fill: #2563eb !important;
+  font-style: italic;
   font-weight: 600;
-  background: #f8fafc;
-  border-radius: 6px;
-  padding: 2px 8px;
+  background: #e0f2fe;
+  border-radius: 8px;
+  padding: 3px 10px;
+  border: 1px solid #bae6fd;
+  box-shadow: 0 2px 8px rgba(144,198,247,0.08);
 }
 
 /* Ensure proper z-index for interactive elements */
@@ -156,8 +169,8 @@
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .concept-map-container {
-    min-height: 400px;
-    padding: 1rem;
+    padding: 1rem 0.5rem;
+    min-height: 350px;
   }
   
   .concept-map-container svg {
@@ -346,4 +359,70 @@
 }
 
 /* Mermaid SVG gradient definition (inject via JS if needed) */
+
+/* Pencil icon and node hover glow */
+.concept-map-container .node.hovered rect,
+.concept-map-container .node.hovered ellipse {
+  filter: drop-shadow(0 0 8px #ffe066cc) drop-shadow(0 2px 8px rgba(60,60,60,0.10));
+  stroke: #ffe066 !important;
+  transition: filter 0.2s, stroke 0.2s;
+}
+.concept-map-container .node .pencil-icon {
+  position: absolute;
+  top: -18px;
+  right: -18px;
+  z-index: 100;
+  pointer-events: none;
+  opacity: 0.95;
+}
+/* Edge label styling */
+.concept-map-container .edgeLabel {
+  font-size: 1.05rem !important;
+  font-family: 'Inter', 'Nunito', system-ui, sans-serif !important;
+  fill: #3b3b3b !important;
+  font-style: italic;
+  font-weight: 600;
+  background: #fffbe6;
+  border-radius: 8px;
+  padding: 3px 10px;
+  border: 1px solid #ffe066;
+  box-shadow: 0 2px 8px rgba(255,224,102,0.08);
+}
+/* Vintage/italic style for key words */
+.vintage-keyword, .concept-map-container em {
+  font-family: 'EB Garamond', 'Times New Roman', serif !important;
+  font-style: italic !important;
+  color: #7c5e2c !important;
+  background: linear-gradient(90deg, #fffbe6 60%, #f5e6e8 100%);
+  padding: 0 2px;
+  border-radius: 2px;
+  letter-spacing: 0.01em;
+}
+
+/* Central node accent */
+.concept-map-container .node.main-idea rect,
+.concept-map-container .node.main-idea ellipse {
+  fill: #d0e8ff !important;
+  stroke: #90c6f7 !important;
+  box-shadow: 0 4px 16px 0 rgba(144,198,247,0.10);
+}
+
+/* Node hover/active micro-animations */
+.concept-map-container .node:hover:after {
+  content: 'Double-click to edit';
+  position: absolute;
+  left: 50%;
+  top: -2.2rem;
+  transform: translateX(-50%);
+  background: #23272f;
+  color: #fff;
+  font-size: 0.92rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 0.5rem;
+  opacity: 0.92;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(60,60,60,0.10);
+}
 
