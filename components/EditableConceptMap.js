@@ -18,36 +18,41 @@ function MermaidRenderer({ diagram, onNodeDoubleClick, onNodeHover, onNodeHoverL
         setIsRendering(true);
         setRenderError(null);
         
-        // Sanitize the diagram first
         let sanitizedDiagram = cleanMermaidString(diagram);
         if (!sanitizedDiagram || sanitizedDiagram.trim() === '') {
             setRenderError('Empty or invalid diagram after sanitization');
             setIsRendering(false);
             return;
         }
-        
-        // If the diagram doesn't start with 'graph', it's probably invalid
         if (!sanitizedDiagram.trim().startsWith('graph')) {
-            console.warn('Invalid diagram format, using fallback');
             sanitizedDiagram = 'graph TD\nErrorNode["Invalid diagram format"]';
         }
-        
-        // Pre-validate the diagram before rendering
-        try {
-            // If we have a diagram but no concepts, it might be a manually created or legacy diagram
-            // In this case, we'll be more lenient with validation
-            const validation = validateMermaidDiagram(sanitizedDiagram, 'MermaidRenderer');
-            if (!validation.valid) {
-                console.warn('Diagram validation failed, but attempting to render anyway:', validation.error);
-                // Don't fail immediately - let Mermaid try to parse it
-            }
-        } catch (validationError) {
-            console.error('Validation error:', validationError);
-            // Don't fail immediately - let Mermaid try to parse it
+
+        // Use the new validator
+        const validation = validateMermaidDiagram(sanitizedDiagram);
+        if (!validation.isValid) {
+            setRenderError(
+                <div>
+                    <div className="font-bold mb-2">⚠️ Could not render concept map</div>
+                    <div className="text-sm text-red-700">{validation.errorMessage}</div>
+                    <details className="mt-2">
+                        <summary className="cursor-pointer text-xs underline">Show Mermaid code</summary>
+                        <pre className="whitespace-pre-wrap text-xs bg-gray-100 p-2 rounded max-h-40 overflow-auto">{sanitizedDiagram.slice(0, 1000)}</pre>
+                    </details>
+                </div>
+            );
+            setIsRendering(false);
+            // Log for debugging
+            console.warn('[Mermaid Render Fail]', {
+                input: diagram,
+                sanitizedDiagram,
+                error: validation.errorMessage
+            });
+            return;
         }
-        
+
         try {
-            mermaid.render('concept-map', sanitizedDiagram)
+            mermaid.render('concept-map', validation.sanitizedDiagram)
                 .then(({ svg }) => {
                     if (isMounted && hostRef.current) {
                         hostRef.current.innerHTML = svg;
@@ -132,8 +137,22 @@ function MermaidRenderer({ diagram, onNodeDoubleClick, onNodeHover, onNodeHoverL
                     }
                 })
                 .catch((err) => {
-                    console.error('Mermaid render error:', err, '\nDiagram:', sanitizedDiagram);
-                    setRenderError('Mermaid render error: ' + err.message);
+                    setRenderError(
+                        <div>
+                            <div className="font-bold mb-2">⚠️ Could not render concept map</div>
+                            <div className="text-sm text-red-700">Mermaid render error: {err.message}</div>
+                            <details className="mt-2">
+                                <summary className="cursor-pointer text-xs underline">Show Mermaid code</summary>
+                                <pre className="whitespace-pre-wrap text-xs bg-gray-100 p-2 rounded max-h-40 overflow-auto">{sanitizedDiagram.slice(0, 1000)}</pre>
+                            </details>
+                        </div>
+                    );
+                    setIsRendering(false);
+                    console.warn('[Mermaid Render Exception]', {
+                        input: diagram,
+                        sanitizedDiagram,
+                        error: err.message
+                    });
                 })
                 .finally(() => {
                     if (isMounted) {
@@ -141,14 +160,26 @@ function MermaidRenderer({ diagram, onNodeDoubleClick, onNodeHover, onNodeHoverL
                     }
                 });
         } catch (err) {
-            console.error('Mermaid render error (sync):', err, '\nDiagram:', sanitizedDiagram);
-            setRenderError('Mermaid render error: ' + err.message);
+            setRenderError(
+                <div>
+                    <div className="font-bold mb-2">⚠️ Could not render concept map</div>
+                    <div className="text-sm text-red-700">Mermaid render error: {err.message}</div>
+                    <details className="mt-2">
+                        <summary className="cursor-pointer text-xs underline">Show Mermaid code</summary>
+                        <pre className="whitespace-pre-wrap text-xs bg-gray-100 p-2 rounded max-h-40 overflow-auto">{sanitizedDiagram.slice(0, 1000)}</pre>
+                    </details>
+                </div>
+            );
             setIsRendering(false);
+            console.warn('[Mermaid Render Exception]', {
+                input: diagram,
+                sanitizedDiagram,
+                error: err.message
+            });
         }
         return () => {
             isMounted = false;
             if (hostRef.current) {
-                // Clean up listeners when component unmounts or diagram changes
                 hostRef.current.innerHTML = '';
             }
         };
@@ -199,6 +230,33 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
     const [showInlineEditor, setShowInlineEditor] = useState(false);
     const [editingNodeId, setEditingNodeId] = useState(null);
     const [hoveredNodeId, setHoveredNodeId] = useState(null);
+
+    // Dev-only debug panel
+    const isDev = typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development';
+    const [showDebug, setShowDebug] = useState(false);
+    let debugPanel = null;
+    if (isDev && editedMap?.mermaidDiagram) {
+        const validation = validateMermaidDiagram(editedMap.mermaidDiagram);
+        debugPanel = (
+            <div className="bg-gray-100 border border-gray-300 rounded p-3 mt-4">
+                <button className="text-xs underline mb-2" onClick={() => setShowDebug(v => !v)}>
+                    {showDebug ? 'Hide' : 'Show'} Mermaid Debug Panel
+                </button>
+                {showDebug && (
+                    <div>
+                        <div className="font-mono text-xs mb-2">
+                            <strong>Diagram:</strong>
+                            <pre className="whitespace-pre-wrap max-h-40 overflow-auto">{editedMap.mermaidDiagram.slice(0, 2000)}</pre>
+                        </div>
+                        <div className="text-xs">
+                            <strong>Validation:</strong> {validation.isValid ? '✅ Valid' : '❌ Invalid'}<br/>
+                            {validation.errorMessage && <div className="text-red-700">{validation.errorMessage}</div>}
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    }
 
     // Debug logging to understand data structure
     useEffect(() => {
@@ -836,6 +894,9 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
                     </span>
                 </div>
             )}
+
+            {/* Render debug panel in the main return (e.g., after the concept map container) */}
+            {debugPanel}
         </div>
     );
 } 

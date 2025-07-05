@@ -393,146 +393,93 @@ function isValidMermaidLabel(label) {
   return typeof label === 'string' && !label.includes('"') && !label.includes('\n');
 }
 
-function validateMermaidDiagram(diagram, inputText) {
-  if (!diagram || typeof diagram !== 'string') {
-    return { valid: false, error: 'Invalid diagram: must be a non-empty string' };
-  }
-
-  const lines = diagram.split('\n');
-  let hasGraph = false;
-  let seenNodeOrEdge = false;
-  let seenClassDefOrStyle = false;
-  let nodeIds = new Set();
-  let error = null;
-
-  // Check for empty or whitespace-only diagram
-  if (lines.length === 0 || lines.every(line => !line.trim())) {
-    return { valid: false, error: 'Empty diagram' };
-  }
-
-  lines.forEach((line, idx) => {
-    const trimmedLine = line.trim();
+// Centralized Mermaid diagram validator
+export function validateMermaidDiagram(diagramString) {
+    if (!diagramString || typeof diagramString !== 'string') {
+        return { isValid: false, errorMessage: 'Diagram is empty or not a string', sanitizedDiagram: '' };
+    }
+    // Remove BOM and normalize line endings
+    let sanitized = diagramString.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+    const lines = sanitized.split('\n');
+    let errorMessage = '';
+    let isValid = true;
+    let sanitizedLines = [];
+    let foundGraph = false;
+    let lineNum = 0;
+    const graphRegex = /^graph\s+(TD|LR|RL|BT|TB)\s*$/;
+    const nodeRegex = /^[a-zA-Z0-9_\-]+\s*\[".*"\]$/;
+    const edgeRegex = /^[a-zA-Z0-9_\-]+\s*-->(\|[^|]+\|)?\s*[a-zA-Z0-9_\-]+$/;
+    const specialKeywords = ['classDef', 'class ', 'style', 'click'];
     
-    // Skip empty lines and comments
-    if (!trimmedLine || trimmedLine.startsWith('%%')) {
-      return;
-    }
-
-    // Check for graph declaration
-    if (trimmedLine.startsWith('graph')) {
-      if (hasGraph) {
-        error = `Multiple graph declarations (line ${idx + 1})`;
-        return;
-      }
-      hasGraph = true;
-      if (!/^graph\s+(TD|LR|RL|BT|TB)/.test(trimmedLine)) {
-        error = `Invalid graph direction on line ${idx + 1}: ${trimmedLine}`;
-        return;
-      }
-    } 
-    // Check for node definitions
-    else if (trimmedLine.match(/^[a-zA-Z0-9_\-]+\s*\[".*"\]/)) {
-      seenNodeOrEdge = true;
-      const nodeMatch = trimmedLine.match(/^([a-zA-Z0-9_\-]+)\s*\["(.*)"\]/);
-      if (nodeMatch) {
-        const nodeId = nodeMatch[1];
-        const nodeText = nodeMatch[2];
-        
-        // Check for duplicate node IDs
-        if (nodeIds.has(nodeId)) {
-          error = `Duplicate node ID '${nodeId}' on line ${idx + 1}`;
-          return;
+    for (let i = 0; i < lines.length; i++) {
+        let line = lines[i];
+        lineNum = i + 1;
+        // Remove non-ASCII characters
+        let asciiLine = line.replace(/[^\x20-\x7E]/g, '');
+        // Remove trailing/leading whitespace
+        asciiLine = asciiLine.trimEnd();
+        // Check for graph declaration
+        if (i === 0) {
+            if (!graphRegex.test(asciiLine)) {
+                isValid = false;
+                errorMessage = `Line 1 must be a valid Mermaid graph declaration (e.g., 'graph TD'). Found: '${asciiLine}'`;
+                break;
+            }
+            foundGraph = true;
+            sanitizedLines.push(asciiLine);
+            continue;
         }
-        nodeIds.add(nodeId);
-        
-        // Check for invalid node ID
-        if (!/^[a-zA-Z0-9_\-]+$/.test(nodeId)) {
-          error = `Invalid node ID '${nodeId}' on line ${idx + 1}: only letters, numbers, hyphens, and underscores allowed`;
-          return;
+        // Disallow special keywords on the same line as graph
+        if (asciiLine.startsWith('graph') && specialKeywords.some(k => asciiLine.includes(k))) {
+            isValid = false;
+            errorMessage = `Special keywords (classDef, style, click) must not appear on the same line as graph declaration (line ${lineNum})`;
+            break;
         }
-        
-        // Check for empty or problematic node text
-        if (!nodeText || nodeText.length === 0) {
-          error = `Empty node text on line ${idx + 1}`;
-          return;
+        // Disallow special keywords on the same line as anything else
+        for (const keyword of specialKeywords) {
+            if (asciiLine.includes(keyword)) {
+                if (!asciiLine.startsWith(keyword)) {
+                    isValid = false;
+                    errorMessage = `Special keyword '${keyword}' must be on its own line (line ${lineNum})`;
+                    break;
+                }
+                // Remove invalid CSS from classDef/style
+                if (keyword === 'classDef' || keyword === 'style') {
+                    // Only allow valid Mermaid classDef/style syntax (very basic check)
+                    asciiLine = asciiLine.replace(/\{[^}]*\}/g, '');
+                }
+            }
         }
-      } else {
-        error = `Malformed node definition on line ${idx + 1}: ${trimmedLine}`;
-        return;
-      }
-    }
-    // Check for edge definitions
-    else if (trimmedLine.includes('-->')) {
-      seenNodeOrEdge = true;
-      
-      // Validate edge syntax
-      const edgePatterns = [
-        /^([a-zA-Z0-9_\-]+)\s*-->\s*([a-zA-Z0-9_\-]+)$/, // Simple edge
-        /^([a-zA-Z0-9_\-]+)\s*-->\|([^|]*)\|\s*([a-zA-Z0-9_\-]+)$/ // Edge with label
-      ];
-      
-      let validEdge = false;
-      for (const pattern of edgePatterns) {
-        const match = trimmedLine.match(pattern);
-        if (match) {
-          const fromId = match[1];
-          const toId = match[3] || match[2];
-          
-          // Check if source node exists
-          if (!nodeIds.has(fromId)) {
-            error = `Edge references non-existent source node '${fromId}' on line ${idx + 1}`;
-            return;
-          }
-          
-          // Check if target node exists
-          if (!nodeIds.has(toId)) {
-            error = `Edge references non-existent target node '${toId}' on line ${idx + 1}`;
-            return;
-          }
-          
-          validEdge = true;
-          break;
+        if (!isValid) break;
+        // Validate node/edge definitions
+        if (asciiLine.length === 0 || asciiLine.startsWith('%%')) {
+            sanitizedLines.push(asciiLine);
+            continue;
         }
-      }
-      
-      if (!validEdge) {
-        error = `Malformed edge definition on line ${idx + 1}: ${trimmedLine}`;
-        return;
-      }
+        if (nodeRegex.test(asciiLine) || edgeRegex.test(asciiLine)) {
+            sanitizedLines.push(asciiLine);
+            continue;
+        }
+        // Allow classDef/style/click on their own line
+        if (specialKeywords.some(k => asciiLine.startsWith(k))) {
+            sanitizedLines.push(asciiLine);
+            continue;
+        }
+        // If not a valid node/edge or special line, it's an error
+        isValid = false;
+        errorMessage = `Invalid Mermaid syntax on line ${lineNum}: '${asciiLine}'`;
+        break;
     }
-    // Check for unsupported syntax
-    else if (trimmedLine.startsWith('classDef') || trimmedLine.startsWith('style') || trimmedLine.startsWith('click')) {
-      seenClassDefOrStyle = true;
-      if (!seenNodeOrEdge) {
-        error = `classDef/style/click before nodes/edges (line ${idx + 1})`;
-        return;
-      }
+    if (!foundGraph && isValid) {
+        isValid = false;
+        errorMessage = 'Missing graph declaration on the first line.';
     }
-    // Unknown line
-    else if (!hasGraph) {
-      error = `Content before graph declaration (line ${idx + 1}): ${trimmedLine}`;
-      return;
-    } else {
-      error = `Unknown syntax on line ${idx + 1}: ${trimmedLine}`;
-      return;
-    }
-  });
-
-  if (!hasGraph) {
-    error = 'Missing graph declaration';
-  } else if (!seenNodeOrEdge) {
-    error = 'No nodes or edges defined';
-  }
-
-  if (error) {
-    console.error('[Mermaid Validator] Error:', error, '\nInput:', inputText, '\nDiagram:', diagram);
-    return { valid: false, error };
-  }
-  
-  return { valid: true };
+    return {
+        isValid,
+        errorMessage,
+        sanitizedDiagram: sanitizedLines.join('\n')
+    };
 }
-
-export { validateMermaidDiagram };
 
 /**
  * Creates a Mermaid.js diagram from the processed concepts
@@ -657,14 +604,14 @@ export function createMermaidDiagram(concepts, inputText = '') {
     console.log('Generated diagram:', diagram);
     
     // Validate the final diagram
-    const validation = validateMermaidDiagram(diagram, inputText);
+    const validation = validateMermaidDiagram(diagram);
     if (!validation.valid) {
-      console.error('Generated diagram failed validation:', validation.error);
+      console.error('Generated diagram failed validation:', validation.errorMessage);
       return 'graph TD\nErrorNode["Unable to render concept map due to syntax error. Please try again with different input."]';
     }
 
     console.log('Successfully generated Mermaid diagram with', processedNodes.length, 'nodes and', processedEdges.length, 'edges');
-    return diagram;
+    return validation.sanitizedDiagram;
   } catch (error) {
     console.error('Error creating Mermaid diagram:', error);
     return 'graph TD\nErrorNode["Error creating diagram"]';
