@@ -20,25 +20,50 @@ function MermaidRenderer({ diagram, onNodeDoubleClick, onNodeHover, onNodeHoverL
         
         let sanitizedDiagram = cleanMermaidString(diagram);
         if (!sanitizedDiagram || sanitizedDiagram.trim() === '') {
-            setRenderError('Empty or invalid diagram after sanitization');
+            setRenderError(
+                <div className="bg-yellow-100 border border-yellow-300 text-yellow-800 p-4 rounded-lg">
+                    <div className="font-bold mb-2">⚠️ Empty Diagram</div>
+                    <div className="text-sm">The concept map diagram is empty or invalid.</div>
+                </div>
+            );
             setIsRendering(false);
             return;
         }
+        
         if (!sanitizedDiagram.trim().startsWith('graph')) {
             sanitizedDiagram = 'graph TD\nErrorNode["Invalid diagram format"]';
         }
 
-        // Use the new validator
+        // Use the enhanced validator
         const validation = validateMermaidDiagram(sanitizedDiagram);
         if (!validation.isValid) {
+            const errorMessages = validation.errors.map(error => 
+                error.line > 0 ? `Line ${error.line}: ${error.message}` : error.message
+            ).join('\n• ');
+            
             setRenderError(
-                <div>
+                <div className="bg-red-100 border border-red-300 text-red-800 p-4 rounded-lg">
                     <div className="font-bold mb-2">⚠️ Could not render concept map</div>
-                    <div className="text-sm text-red-700">{validation.errorMessage}</div>
-                    <details className="mt-2">
-                        <summary className="cursor-pointer text-xs underline">Show Mermaid code</summary>
-                        <pre className="whitespace-pre-wrap text-xs bg-gray-100 p-2 rounded max-h-40 overflow-auto">{sanitizedDiagram.slice(0, 1000)}</pre>
+                    <div className="text-sm mb-3">
+                        <strong>Syntax errors found:</strong>
+                        <ul className="list-disc list-inside mt-1 space-y-1">
+                            {validation.errors.map((error, index) => (
+                                <li key={index} className="text-xs">
+                                    {error.line > 0 ? `Line ${error.line}: ` : ''}{error.message}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                    <details className="mt-3">
+                        <summary className="cursor-pointer text-xs underline font-medium">Show Mermaid code</summary>
+                        <pre className="whitespace-pre-wrap text-xs bg-gray-100 p-2 rounded max-h-40 overflow-auto mt-2">{sanitizedDiagram.slice(0, 1000)}</pre>
                     </details>
+                    <button 
+                        onClick={() => window.location.reload()} 
+                        className="mt-3 px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition-colors"
+                    >
+                        Try Again
+                    </button>
                 </div>
             );
             setIsRendering(false);
@@ -46,13 +71,13 @@ function MermaidRenderer({ diagram, onNodeDoubleClick, onNodeHover, onNodeHoverL
             console.warn('[Mermaid Render Fail]', {
                 input: diagram,
                 sanitizedDiagram,
-                error: validation.errorMessage
+                errors: validation.errors
             });
             return;
         }
 
         try {
-            mermaid.render('concept-map', validation.sanitizedDiagram)
+            mermaid.render('concept-map', validation.sanitized)
                 .then(({ svg }) => {
                     if (isMounted && hostRef.current) {
                         hostRef.current.innerHTML = svg;
@@ -138,13 +163,19 @@ function MermaidRenderer({ diagram, onNodeDoubleClick, onNodeHover, onNodeHoverL
                 })
                 .catch((err) => {
                     setRenderError(
-                        <div>
+                        <div className="bg-red-100 border border-red-300 text-red-800 p-4 rounded-lg">
                             <div className="font-bold mb-2">⚠️ Could not render concept map</div>
-                            <div className="text-sm text-red-700">Mermaid render error: {err.message}</div>
+                            <div className="text-sm mb-3">Mermaid render error: {err.message}</div>
                             <details className="mt-2">
-                                <summary className="cursor-pointer text-xs underline">Show Mermaid code</summary>
-                                <pre className="whitespace-pre-wrap text-xs bg-gray-100 p-2 rounded max-h-40 overflow-auto">{sanitizedDiagram.slice(0, 1000)}</pre>
+                                <summary className="cursor-pointer text-xs underline font-medium">Show Mermaid code</summary>
+                                <pre className="whitespace-pre-wrap text-xs bg-gray-100 p-2 rounded max-h-40 overflow-auto mt-2">{sanitizedDiagram.slice(0, 1000)}</pre>
                             </details>
+                            <button 
+                                onClick={() => window.location.reload()} 
+                                className="mt-3 px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition-colors"
+                            >
+                                Try Again
+                            </button>
                         </div>
                     );
                     setIsRendering(false);
@@ -161,13 +192,19 @@ function MermaidRenderer({ diagram, onNodeDoubleClick, onNodeHover, onNodeHoverL
                 });
         } catch (err) {
             setRenderError(
-                <div>
+                <div className="bg-red-100 border border-red-300 text-red-800 p-4 rounded-lg">
                     <div className="font-bold mb-2">⚠️ Could not render concept map</div>
-                    <div className="text-sm text-red-700">Mermaid render error: {err.message}</div>
+                    <div className="text-sm mb-3">Mermaid render error: {err.message}</div>
                     <details className="mt-2">
-                        <summary className="cursor-pointer text-xs underline">Show Mermaid code</summary>
-                        <pre className="whitespace-pre-wrap text-xs bg-gray-100 p-2 rounded max-h-40 overflow-auto">{sanitizedDiagram.slice(0, 1000)}</pre>
+                        <summary className="cursor-pointer text-xs underline font-medium">Show Mermaid code</summary>
+                        <pre className="whitespace-pre-wrap text-xs bg-gray-100 p-2 rounded max-h-40 overflow-auto mt-2">{sanitizedDiagram.slice(0, 1000)}</pre>
                     </details>
+                    <button 
+                        onClick={() => window.location.reload()} 
+                        className="mt-3 px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition-colors"
+                    >
+                        Try Again
+                    </button>
                 </div>
             );
             setIsRendering(false);
@@ -187,13 +224,8 @@ function MermaidRenderer({ diagram, onNodeDoubleClick, onNodeHover, onNodeHoverL
 
     if (renderError) {
         return (
-            <div className="bg-red-100 text-red-700 p-4 rounded-lg border border-red-300 mt-4">
-                <strong>Error rendering concept map:</strong>
-                <pre className="whitespace-pre-wrap text-xs mt-2">{renderError}</pre>
-                <details className="mt-2">
-                    <summary>Show Mermaid code</summary>
-                    <pre className="whitespace-pre-wrap text-xs bg-gray-100 p-2 rounded">{diagram}</pre>
-                </details>
+            <div className="concept-map-container bg-base-100 p-4 rounded-lg w-full overflow-auto min-h-[500px] min-w-[350px]">
+                {renderError}
             </div>
         );
     }
@@ -235,23 +267,21 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
     const isDev = typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development';
     const [showDebug, setShowDebug] = useState(false);
     let debugPanel = null;
-    if (isDev && editedMap?.mermaidDiagram) {
-        const validation = validateMermaidDiagram(editedMap.mermaidDiagram);
+    if (isDev && conceptMap?.debugInfo) {
+        const debug = conceptMap.debugInfo;
         debugPanel = (
             <div className="bg-gray-100 border border-gray-300 rounded p-3 mt-4">
                 <button className="text-xs underline mb-2" onClick={() => setShowDebug(v => !v)}>
-                    {showDebug ? 'Hide' : 'Show'} Mermaid Debug Panel
+                    {showDebug ? 'Hide' : 'Show'} Full Concept Map Debug Panel
                 </button>
                 {showDebug && (
-                    <div>
-                        <div className="font-mono text-xs mb-2">
-                            <strong>Diagram:</strong>
-                            <pre className="whitespace-pre-wrap max-h-40 overflow-auto">{editedMap.mermaidDiagram.slice(0, 2000)}</pre>
-                        </div>
-                        <div className="text-xs">
-                            <strong>Validation:</strong> {validation.isValid ? '✅ Valid' : '❌ Invalid'}<br/>
-                            {validation.errorMessage && <div className="text-red-700">{validation.errorMessage}</div>}
-                        </div>
+                    <div className="text-xs space-y-2">
+                        <div><strong>User Input:</strong><br/><pre className="whitespace-pre-wrap">{debug.userInput}</pre></div>
+                        <div><strong>AI Raw Output:</strong><br/><pre className="whitespace-pre-wrap">{typeof debug.aiRawOutput === 'string' ? debug.aiRawOutput : JSON.stringify(debug.aiRawOutput, null, 2)}</pre></div>
+                        {debug.parseError && <div className="text-red-700"><strong>Parse Error:</strong> {debug.parseError}</div>}
+                        <div><strong>Concepts:</strong><br/><pre className="whitespace-pre-wrap">{JSON.stringify(debug.concepts, null, 2)}</pre></div>
+                        <div><strong>Generated Mermaid Diagram:</strong><br/><pre className="whitespace-pre-wrap">{debug.mermaidDiagram}</pre></div>
+                        <div><strong>Validation Result:</strong><br/><pre className="whitespace-pre-wrap">{JSON.stringify(debug.validation, null, 2)}</pre></div>
                     </div>
                 )}
             </div>
@@ -486,10 +516,13 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
     const handleCodeEdit = () => {
         try {
             // First, validate the Mermaid code using our comprehensive validator
-            const validation = validateMermaidDiagram(mermaidCode, 'Manual code edit');
+            const validation = validateMermaidDiagram(mermaidCode);
             
-            if (!validation.valid) {
-                toast.error('Invalid Mermaid syntax: ' + validation.error);
+            if (!validation.isValid) {
+                const errorMessages = validation.errors.map(error => 
+                    error.line > 0 ? `Line ${error.line}: ${error.message}` : error.message
+                ).join('\n• ');
+                toast.error('Invalid Mermaid syntax:\n• ' + errorMessages);
                 return;
             }
 
