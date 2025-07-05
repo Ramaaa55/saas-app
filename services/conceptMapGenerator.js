@@ -400,23 +400,32 @@ export function validateMermaidDiagram(diagramString) {
     }
     // Remove BOM and normalize line endings
     let sanitized = diagramString.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
-    const lines = sanitized.split('\n');
+    // Remove invalid Unicode
+    sanitized = sanitized.replace(/[^\x20-\x7E\n]/g, '');
+    let lines = sanitized.split('\n');
     let errorMessage = '';
     let isValid = true;
     let sanitizedLines = [];
     let foundGraph = false;
     let lineNum = 0;
-    const graphRegex = /^graph\s+(TD|LR|RL|BT|TB)\s*$/;
+    const graphRegex = /^(graph|flowchart)\s+(TD|TB|LR|RL|BT)\s*$/;
     const nodeRegex = /^[a-zA-Z0-9_\-]+\s*\[".*"\]$/;
     const edgeRegex = /^[a-zA-Z0-9_\-]+\s*-->(\|[^|]+\|)?\s*[a-zA-Z0-9_\-]+$/;
     const specialKeywords = ['classDef', 'class ', 'style', 'click'];
-    
+
+    // Auto-correct: If first line is not a valid graph declaration, prepend 'graph TD'
+    if (!graphRegex.test(lines[0])) {
+        lines.unshift('graph TD');
+        sanitized = 'graph TD\n' + sanitized;
+    }
+
+    let firstBlankLine = lines.findIndex(l => l.trim() === '');
+    if (firstBlankLine === -1) firstBlankLine = lines.length;
+
     for (let i = 0; i < lines.length; i++) {
         let line = lines[i];
         lineNum = i + 1;
-        // Remove non-ASCII characters
         let asciiLine = line.replace(/[^\x20-\x7E]/g, '');
-        // Remove trailing/leading whitespace
         asciiLine = asciiLine.trimEnd();
         // Check for graph declaration
         if (i === 0) {
@@ -428,6 +437,12 @@ export function validateMermaidDiagram(diagramString) {
             foundGraph = true;
             sanitizedLines.push(asciiLine);
             continue;
+        }
+        // Disallow special keywords before first blank line
+        if (i < firstBlankLine && specialKeywords.some(k => asciiLine.includes(k))) {
+            isValid = false;
+            errorMessage = `Special keywords (classDef, style, click) must not appear before the first blank line (line ${lineNum})`;
+            break;
         }
         // Disallow special keywords on the same line as graph
         if (asciiLine.startsWith('graph') && specialKeywords.some(k => asciiLine.includes(k))) {
@@ -445,7 +460,6 @@ export function validateMermaidDiagram(diagramString) {
                 }
                 // Remove invalid CSS from classDef/style
                 if (keyword === 'classDef' || keyword === 'style') {
-                    // Only allow valid Mermaid classDef/style syntax (very basic check)
                     asciiLine = asciiLine.replace(/\{[^}]*\}/g, '');
                 }
             }
@@ -473,6 +487,14 @@ export function validateMermaidDiagram(diagramString) {
     if (!foundGraph && isValid) {
         isValid = false;
         errorMessage = 'Missing graph declaration on the first line.';
+    }
+    // Fallback error message if none was set
+    if (!isValid && (!errorMessage || errorMessage.trim() === '')) {
+        errorMessage = 'Unknown Mermaid validation error. The diagram may be empty or malformed.';
+    }
+    // If all lines are stripped, set a clear error
+    if (!isValid && sanitizedLines.length === 0) {
+        errorMessage = 'Diagram is empty after sanitization. Please check your input.';
     }
     return {
         isValid,
