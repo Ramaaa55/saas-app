@@ -575,51 +575,124 @@ export function preprocessDiagram(concepts) {
 }
 
 /**
- * Validates Mermaid diagram syntax with better error reporting
+ * Validates Mermaid diagram syntax with comprehensive error reporting
  * @param {string} diagram
- * @returns {{valid: boolean, error?: string}}
+ * @returns {{valid: boolean, error?: string, details?: Array}}
  */
 export function validateMermaidDiagram(diagram) {
     if (!diagram || typeof diagram !== 'string') {
         return { valid: false, error: 'Empty diagram' };
     }
     
-    if (!diagram.trim().startsWith('graph')) {
-        return { valid: false, error: 'Missing graph declaration' };
-    }
-    
-    if (/ErrorNode/.test(diagram)) {
-        return { valid: false, error: 'Error node present' };
-    }
-    
-    // Check for problematic patterns in Mermaid syntax
     const lines = diagram.split('\n');
     let errorDetails = [];
     
+    // Check first line for proper graph declaration
+    if (lines.length === 0 || !lines[0].trim().startsWith('graph')) {
+        return { valid: false, error: 'Missing or invalid graph declaration. Must start with "graph TD"' };
+    }
+    
+    // Check for error nodes
+    if (/ErrorNode/.test(diagram)) {
+        return { valid: false, error: 'Error node present in diagram' };
+    }
+    
+    // Line-by-line validation
     lines.forEach((line, idx) => {
         const lineNum = idx + 1;
+        const trimmedLine = line.trim();
         
-        // Check for unescaped quotes in node definitions
-        if (line.includes('["') && !line.includes('\\"')) {
-            const quoteMatch = line.match(/\["([^"]*)"\]/);
-            if (quoteMatch && quoteMatch[1].includes('"')) {
-                errorDetails.push(`Line ${lineNum}: Unescaped quote in node text`);
+        // Skip empty lines and comments
+        if (!trimmedLine || trimmedLine.startsWith('%%')) {
+            return;
+        }
+        
+        // Check for proper node definitions
+        if (trimmedLine.includes('[') && trimmedLine.includes(']')) {
+            // Node definition validation
+            const nodeMatch = trimmedLine.match(/^(\w+)\["([^"]*)"\]/);
+            if (!nodeMatch) {
+                errorDetails.push(`Line ${lineNum}: Invalid node definition syntax`);
+            } else {
+                const nodeId = nodeMatch[1];
+                const nodeText = nodeMatch[2];
+                
+                // Check for valid node ID
+                if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(nodeId)) {
+                    errorDetails.push(`Line ${lineNum}: Invalid node ID "${nodeId}" - must start with letter`);
+                }
+                
+                // Check for empty node text
+                if (!nodeText.trim()) {
+                    errorDetails.push(`Line ${lineNum}: Empty node text`);
+                }
+                
+                // Check for unescaped quotes in node text
+                if (nodeText.includes('"') && !nodeText.includes('\\"')) {
+                    errorDetails.push(`Line ${lineNum}: Unescaped quote in node text`);
+                }
             }
         }
         
-        // Check for problematic characters in node text
-        if (line.includes('["') && /[\[\]{}|<>]/.test(line)) {
-            errorDetails.push(`Line ${lineNum}: Special characters in node text`);
+        // Check for proper edge definitions
+        if (trimmedLine.includes('-->')) {
+            // Edge definition validation
+            const edgeMatch = trimmedLine.match(/^(\w+)\s*-->\s*\|"([^"]*)"\|\s*(\w+)$/);
+            if (!edgeMatch) {
+                errorDetails.push(`Line ${lineNum}: Invalid edge definition syntax`);
+            } else {
+                const fromId = edgeMatch[1];
+                const label = edgeMatch[2];
+                const toId = edgeMatch[3];
+                
+                // Check for valid node IDs
+                if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(fromId)) {
+                    errorDetails.push(`Line ${lineNum}: Invalid source node ID "${fromId}"`);
+                }
+                if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(toId)) {
+                    errorDetails.push(`Line ${lineNum}: Invalid target node ID "${toId}"`);
+                }
+                
+                // Check for empty edge label
+                if (!label.trim()) {
+                    errorDetails.push(`Line ${lineNum}: Empty edge label`);
+                }
+                
+                // Check for unescaped quotes in edge label
+                if (label.includes('"') && !label.includes('\\"')) {
+                    errorDetails.push(`Line ${lineNum}: Unescaped quote in edge label`);
+                }
+            }
         }
         
-        // Check for empty node definitions
-        if (/\w+\[\s*\]/.test(line)) {
-            errorDetails.push(`Line ${lineNum}: Empty node definition`);
+        // Check for classDef definitions
+        if (trimmedLine.startsWith('classDef')) {
+            const classDefMatch = trimmedLine.match(/^classDef\s+(\w+)\s+(.+)$/);
+            if (!classDefMatch) {
+                errorDetails.push(`Line ${lineNum}: Invalid classDef syntax`);
+            } else {
+                const className = classDefMatch[1];
+                const styles = classDefMatch[2];
+                
+                // Check for valid class name
+                if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(className)) {
+                    errorDetails.push(`Line ${lineNum}: Invalid class name "${className}"`);
+                }
+                
+                // Check for valid style properties
+                const styleProps = styles.split(',');
+                for (const prop of styleProps) {
+                    const [key, value] = prop.split(':').map(s => s.trim());
+                    if (!key || !value) {
+                        errorDetails.push(`Line ${lineNum}: Invalid style property "${prop}"`);
+                    }
+                }
+            }
         }
         
-        // Check for malformed edge definitions
-        if (line.includes('-->') && !line.match(/\w+\s*-->\s*\w+/)) {
-            errorDetails.push(`Line ${lineNum}: Malformed edge definition`);
+        // Check for problematic characters
+        if (/[\[\]{}|<>]/.test(trimmedLine) && !trimmedLine.startsWith('classDef')) {
+            errorDetails.push(`Line ${lineNum}: Special characters that may cause syntax issues`);
         }
     });
     
@@ -628,7 +701,8 @@ export function validateMermaidDiagram(diagram) {
         console.error('Full Mermaid diagram:', diagram);
         return { 
             valid: false, 
-            error: `Syntax issues: ${errorDetails.slice(0, 3).join(', ')}${errorDetails.length > 3 ? '...' : ''}` 
+            error: `Syntax issues: ${errorDetails.slice(0, 3).join(', ')}${errorDetails.length > 3 ? '...' : ''}`,
+            details: errorDetails
         };
     }
     
@@ -647,15 +721,16 @@ export function createMermaidDiagram(concepts, inputText = '') {
     }
     
     try {
-        // Header
+        // Start with proper graph declaration
         let lines = ['graph TD'];
-        // Mermaid config for modern spacing and better character support
+        
+        // Add Mermaid configuration
         lines.push('%%{init: {"themeVariables": {"fontFamily": "Inter, system-ui, sans-serif", "fontSize": "16px", "nodeSpacing": 80, "rankSpacing": 100, "curve": "basis", "edgeLabelBackground": "#fff"}, "flowchart": {"htmlLabels": true, "useMaxWidth": true}}}%%');
+        
         const validNodeIds = new Set();
         const processedNodes = [];
-        const processedEdges = [];
         
-        // Node pass
+        // Process nodes first
         for (const concept of sanitizedConcepts) {
             if (!concept || !concept.id) continue;
             
@@ -672,11 +747,9 @@ export function createMermaidDiagram(concepts, inputText = '') {
                 counter++; 
             }
             
-            // Process node text using the new sanitization function
+            // Process node text using sanitization
             let text = (concept.text || '').trim();
             if (!text) text = 'Node';
-            
-            // Use the comprehensive sanitization
             text = sanitizeMermaidText(text);
             
             validNodeIds.add(id);
@@ -687,14 +760,14 @@ export function createMermaidDiagram(concepts, inputText = '') {
             return 'graph TD\nErrorNode["No valid concepts available"]';
         }
         
-        // Add nodes
+        // Add nodes with proper Mermaid syntax
         for (const [i, node] of processedNodes.entries()) {
             // Assign class: accent for first, then pastel for others
             let nodeClass = i === 0 ? 'accent' : (i % 3 === 1 ? 'pastel-blue' : (i % 3 === 2 ? 'pastel-green' : 'pastel-pink'));
             lines.push(`${node.id}["${node.text}"]:::${nodeClass}`);
         }
         
-        // Edge pass
+        // Add edges with proper Mermaid syntax
         for (const concept of sanitizedConcepts) {
             if (!concept || !concept.id || !concept.connections) continue;
             const processedNode = processedNodes.find(n => n.originalId === concept.id);
@@ -707,23 +780,23 @@ export function createMermaidDiagram(concepts, inputText = '') {
                 if (!targetProcessedNode) continue;
                 const toId = targetProcessedNode.id;
                 
-                // Process edge label using the new sanitization function
+                // Process edge label
                 let label = (conn.label || 'relates to').trim();
                 label = sanitizeMermaidText(label);
                 
                 if (fromId === toId) continue; // Skip self-loops
                 
-                // Use a safer edge syntax
-                lines.push(`${fromId} -.->|"${label}"| ${toId}`);
+                // Use proper Mermaid edge syntax with label
+                lines.push(`${fromId} -->|"${label}"| ${toId}`);
             }
         }
         
-        // Modern style: add a blank line, then classDefs
+        // Add styling definitions
         lines.push('');
-        lines.push('classDef accent fill:#e0e7ff,stroke:#6366f1,stroke-width:2.5px,color:#222,rx:22px,ry:22px,font-weight:bold;');
-        lines.push('classDef pastel-blue fill:#dbeafe,stroke:#60a5fa,stroke-width:2px,color:#222,rx:18px,ry:18px;');
-        lines.push('classDef pastel-green fill:#d1fae5,stroke:#34d399,stroke-width:2px,color:#222,rx:18px,ry:18px;');
-        lines.push('classDef pastel-pink fill:#fce7f3,stroke:#f472b6,stroke-width:2px,color:#222,rx:18px,ry:18px;');
+        lines.push('classDef accent fill:#e0e7ff,stroke:#6366f1,stroke-width:2.5px,color:#222,rx:22px,ry:22px,font-weight:bold');
+        lines.push('classDef pastel-blue fill:#dbeafe,stroke:#60a5fa,stroke-width:2px,color:#222,rx:18px,ry:18px');
+        lines.push('classDef pastel-green fill:#d1fae5,stroke:#34d399,stroke-width:2px,color:#222,rx:18px,ry:18px');
+        lines.push('classDef pastel-pink fill:#fce7f3,stroke:#f472b6,stroke-width:2px,color:#222,rx:18px,ry:18px');
         
         // Join lines
         const diagram = lines.join('\n');

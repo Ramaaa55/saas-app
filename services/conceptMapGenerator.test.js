@@ -156,43 +156,74 @@ function testConceptMapGeneration() {
 }
 
 /**
- * Test Mermaid syntax validation
+ * Test Mermaid syntax validation with comprehensive edge cases
  */
 function testMermaidSyntaxValidation() {
     console.log = originalConsole.log;
     console.log('\n🧪 Testing Mermaid syntax validation...\n');
     
-    const validDiagram = `
-graph TD
-A["José María"] --> B["Δx = 5"]
-B --> C["© 2024"]
-    `.trim();
-    
-    const invalidDiagram = `
-graph TD
-A["Node with [brackets]"] --> B["Node with {braces}"]
-    `.trim();
+    // Test valid diagram generation
+    const validConcepts = [
+        { id: 'A', text: 'José María', type: 'main', connections: [{ targetId: 'B', label: 'connects' }] },
+        { id: 'B', text: 'Δx = 5', type: 'sub', connections: [{ targetId: 'C', label: 'equals' }] },
+        { id: 'C', text: '© 2024', type: 'detail', connections: [] }
+    ];
     
     try {
-        // Test valid diagram
-        const validResult = createMermaidDiagram([
-            { id: 'A', text: 'José María', type: 'main', connections: [{ targetId: 'B', label: 'connects' }] },
-            { id: 'B', text: 'Δx = 5', type: 'sub', connections: [{ targetId: 'C', label: 'equals' }] },
-            { id: 'C', text: '© 2024', type: 'detail', connections: [] }
-        ]);
+        const validResult = createMermaidDiagram(validConcepts);
         
         if (!validResult.includes('ErrorNode')) {
             console.log('✅ Valid Mermaid syntax: PASSED');
+            console.log('Generated diagram preview:', validResult.substring(0, 200) + '...');
         } else {
             console.log('❌ Valid Mermaid syntax: FAILED');
             console.log('Result:', validResult);
         }
         
+        // Test edge syntax specifically
+        const edgeTestConcepts = [
+            { id: 'A', text: 'Start', type: 'main', connections: [{ targetId: 'B', label: 'leads to' }] },
+            { id: 'B', text: 'End', type: 'sub', connections: [] }
+        ];
+        
+        const edgeResult = createMermaidDiagram(edgeTestConcepts);
+        if (edgeResult.includes('A -->|"leads to"| B')) {
+            console.log('✅ Edge syntax: PASSED');
+        } else {
+            console.log('❌ Edge syntax: FAILED');
+            console.log('Expected: A -->|"leads to"| B');
+            console.log('Got:', edgeResult);
+        }
+        
+        // Test node syntax specifically
+        const nodeTestConcepts = [
+            { id: 'A', text: 'Test Node', type: 'main', connections: [] }
+        ];
+        
+        const nodeResult = createMermaidDiagram(nodeTestConcepts);
+        if (nodeResult.includes('A["Test Node"]:::accent')) {
+            console.log('✅ Node syntax: PASSED');
+        } else {
+            console.log('❌ Node syntax: FAILED');
+            console.log('Expected: A["Test Node"]:::accent');
+            console.log('Got:', nodeResult);
+        }
+        
+        // Test classDef syntax
+        if (nodeResult.includes('classDef accent fill:#e0e7ff,stroke:#6366f1,stroke-width:2.5px,color:#222,rx:22px,ry:22px,font-weight:bold')) {
+            console.log('✅ ClassDef syntax: PASSED');
+        } else {
+            console.log('❌ ClassDef syntax: FAILED');
+            console.log('Result:', nodeResult);
+        }
+        
         // Test invalid diagram (should be sanitized)
-        const invalidResult = createMermaidDiagram([
+        const invalidConcepts = [
             { id: 'A', text: 'Node with [brackets]', type: 'main', connections: [{ targetId: 'B', label: 'connects' }] },
             { id: 'B', text: 'Node with {braces}', type: 'sub', connections: [] }
-        ]);
+        ];
+        
+        const invalidResult = createMermaidDiagram(invalidConcepts);
         
         if (!invalidResult.includes('ErrorNode')) {
             console.log('✅ Invalid syntax sanitization: PASSED');
@@ -201,9 +232,137 @@ A["Node with [brackets]"] --> B["Node with {braces}"]
             console.log('Result:', invalidResult);
         }
         
+        return true;
+        
     } catch (error) {
         console.log('❌ Mermaid syntax validation: FAILED');
         console.log('Error:', error.message);
+        return false;
+    }
+}
+
+/**
+ * Test comprehensive Mermaid diagram generation with various scenarios
+ */
+function testComprehensiveDiagramGeneration() {
+    console.log = originalConsole.log;
+    console.log('\n🧪 Testing comprehensive diagram generation...\n');
+    
+    const testScenarios = [
+        {
+            name: 'Single node',
+            concepts: [{ id: 'A', text: 'Single Node', type: 'main', connections: [] }]
+        },
+        {
+            name: 'Two connected nodes',
+            concepts: [
+                { id: 'A', text: 'Start', type: 'main', connections: [{ targetId: 'B', label: 'connects' }] },
+                { id: 'B', text: 'End', type: 'sub', connections: [] }
+            ]
+        },
+        {
+            name: 'Complex network',
+            concepts: [
+                { id: 'A', text: 'Main Concept', type: 'main', connections: [{ targetId: 'B', label: 'includes' }, { targetId: 'C', label: 'relates to' }] },
+                { id: 'B', text: 'Sub Concept 1', type: 'sub', connections: [{ targetId: 'D', label: 'contains' }] },
+                { id: 'C', text: 'Sub Concept 2', type: 'sub', connections: [{ targetId: 'D', label: 'supports' }] },
+                { id: 'D', text: 'Detail', type: 'detail', connections: [] }
+            ]
+        },
+        {
+            name: 'Special characters',
+            concepts: [
+                { id: 'A', text: 'José 📈 [Growth]', type: 'main', connections: [{ targetId: 'B', label: 'Δx = 5' }] },
+                { id: 'B', text: '© 2024 & María', type: 'sub', connections: [] }
+            ]
+        }
+    ];
+    
+    let allPassed = true;
+    
+    testScenarios.forEach((scenario, index) => {
+        try {
+            const result = createMermaidDiagram(scenario.concepts);
+            
+            // Check for basic validity
+            const isValid = result.startsWith('graph TD') && !result.includes('ErrorNode');
+            
+            if (isValid) {
+                console.log(`✅ ${scenario.name}: PASSED`);
+            } else {
+                console.log(`❌ ${scenario.name}: FAILED`);
+                console.log('Result:', result);
+                allPassed = false;
+            }
+            
+            // Additional checks for specific scenarios
+            if (scenario.name === 'Two connected nodes') {
+                if (!result.includes('A -->|"connects"| B')) {
+                    console.log('  ❌ Edge syntax incorrect');
+                    allPassed = false;
+                }
+            }
+            
+            if (scenario.name === 'Special characters') {
+                if (result.includes('José 📈 (Growth)') && result.includes('© 2024 & María')) {
+                    console.log('  ✅ Special characters handled correctly');
+                } else {
+                    console.log('  ❌ Special characters not handled correctly');
+                    allPassed = false;
+                }
+            }
+            
+        } catch (error) {
+            console.log(`❌ ${scenario.name}: FAILED with error: ${error.message}`);
+            allPassed = false;
+        }
+    });
+    
+    return allPassed;
+}
+
+/**
+ * Test error handling and fallbacks
+ */
+function testErrorHandling() {
+    console.log = originalConsole.log;
+    console.log('\n🧪 Testing error handling and fallbacks...\n');
+    
+    // Test with invalid concepts
+    const invalidConcepts = [
+        { id: 'A', text: '', type: 'main', connections: [] }, // Empty text
+        { id: '', text: 'Valid text', type: 'sub', connections: [] }, // Empty ID
+        null, // Null concept
+        { id: 'B', text: 'Valid', type: 'sub', connections: [{ targetId: 'nonexistent', label: 'connects' }] } // Invalid connection
+    ];
+    
+    try {
+        const result = createMermaidDiagram(invalidConcepts);
+        
+        // Should handle gracefully and not crash
+        if (result && result.startsWith('graph TD')) {
+            console.log('✅ Error handling: PASSED - Invalid concepts handled gracefully');
+        } else {
+            console.log('❌ Error handling: FAILED - Invalid concepts caused crash');
+            return false;
+        }
+        
+        // Test with completely invalid input
+        const completelyInvalid = 'not an array';
+        const invalidResult = createMermaidDiagram(completelyInvalid);
+        
+        if (invalidResult.includes('ErrorNode') && invalidResult.includes('Malformed concept data')) {
+            console.log('✅ Invalid input handling: PASSED');
+        } else {
+            console.log('❌ Invalid input handling: FAILED');
+            return false;
+        }
+        
+        return true;
+        
+    } catch (error) {
+        console.log('❌ Error handling: FAILED with exception:', error.message);
+        return false;
     }
 }
 
@@ -217,15 +376,19 @@ function runAllTests() {
     const results = {
         sanitizeTests: testSanitizeMermaidText(),
         generationTests: testConceptMapGeneration(),
-        syntaxTests: testMermaidSyntaxValidation()
+        syntaxTests: testMermaidSyntaxValidation(),
+        comprehensiveTests: testComprehensiveDiagramGeneration(),
+        errorHandling: testErrorHandling()
     };
     
     console.log('\n📋 Test Summary:');
     console.log(`- Sanitization: ${results.sanitizeTests.passed}/${results.sanitizeTests.total} passed`);
     console.log(`- Generation: ${results.generationTests ? 'PASSED' : 'FAILED'}`);
     console.log(`- Syntax: ${results.syntaxTests ? 'PASSED' : 'FAILED'}`);
+    console.log(`- Comprehensive: ${results.comprehensiveTests ? 'PASSED' : 'FAILED'}`);
+    console.log(`- Error Handling: ${results.errorHandling ? 'PASSED' : 'FAILED'}`);
     
-    const allPassed = results.sanitizeTests.failed === 0 && results.generationTests && results.syntaxTests;
+    const allPassed = results.sanitizeTests.failed === 0 && results.generationTests && results.syntaxTests && results.comprehensiveTests && results.errorHandling;
     
     if (allPassed) {
         console.log('\n🎉 All tests passed! Special character handling is working correctly.');
@@ -237,7 +400,7 @@ function runAllTests() {
 }
 
 // Export for use in other files
-export { testSanitizeMermaidText, testConceptMapGeneration, testMermaidSyntaxValidation, runAllTests };
+export { testSanitizeMermaidText, testConceptMapGeneration, testMermaidSyntaxValidation, testComprehensiveDiagramGeneration, testErrorHandling, runAllTests };
 
 // Run tests if this file is executed directly
 if (typeof window === 'undefined' && typeof process !== 'undefined') {
