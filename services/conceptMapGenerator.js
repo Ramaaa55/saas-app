@@ -320,38 +320,67 @@ async function validateConceptMap(conceptMap) {
  * @param {Array} concepts - Array of processed concept objects
  * @returns {string} Mermaid.js diagram syntax
  */
-export function createMermaidDiagram(concepts) {
+export function createMermaidDiagram(concepts, inputText = '') {
+    if (!Array.isArray(concepts) || !concepts.every(c => typeof c === 'object' && c !== null && 'id' in c && 'text' in c)) {
+        return 'graph TD\nErrorNode["Malformed concept data: expected array of concept objects"]';
+    }
     try {
-        // Start with graph TD for top-down layout
-        let diagram = 'graph TD\n';
-
-        // Define Mermaid class styles based on the example image aesthetic
-        diagram += `  classDef main-idea fill:#E8F4EA,stroke:#2C5530,stroke-width:2.5px,stroke-dasharray: 8 3;\n`; // Soft Sage Green
-        diagram += `  classDef secondary-idea fill:#F5E6E8,stroke:#8B5A2B,stroke-width:2.5px,stroke-dasharray: 8 3;\n`; // Soft Rose
-        diagram += `  classDef example fill:#E6F3FF,stroke:#2B4C7E,stroke-width:2.5px,stroke-dasharray: 8 3;\n`; // Soft Blue
-        diagram += `  classDef detail fill:#F5F5DC,stroke:#8B7355,stroke-width:2.5px,stroke-dasharray: 8 3;\n`; // Soft Beige
-
-        // Add nodes with their content
-        concepts.forEach(concept => {
-            const escapedText = escapeMermaidText(concept.text);
-            const escapedDefinition = escapeMermaidText(concept.definition);
-            diagram += `  ${concept.id}["${escapedText}"]:::${concept.class || 'main-idea'};\n`;
-        });
-
-        // Add connections with enhanced styling
-        concepts.forEach(concept => {
-            if (concept.connections) {
-                concept.connections.forEach(conn => {
-                    const escapedLabel = escapeMermaidText(conn.label);
-                    diagram += `  ${concept.id} -->|"<span style='font-size: 12px; font-weight: 500; color: #4A5568; background-color: #F7FAFC; padding: 2px 6px; border-radius: 4px; border: 1px solid #E2E8F0;'>${escapedLabel}</span>"| ${conn.targetId};\n`;
-                });
+        // Header
+        let lines = ['graph TD'];
+        // Mermaid config for modern spacing
+        lines.push('%%{init: {"themeVariables": {"fontFamily": "Inter, system-ui, sans-serif", "fontSize": "16px", "nodeSpacing": 80, "rankSpacing": 100, "curve": "basis", "edgeLabelBackground": "#fff"}}}%%');
+        const validNodeIds = new Set();
+        const processedNodes = [];
+        const processedEdges = [];
+        // Node pass
+        for (const concept of concepts) {
+            if (!concept || !concept.id) continue;
+            let id = concept.id.toString().replace(/[^a-zA-Z0-9_\-]/g, '_');
+            if (!/^[a-zA-Z]/.test(id)) id = 'node_' + id;
+            let originalId = id;
+            let counter = 1;
+            while (validNodeIds.has(id)) { id = `${originalId}_${counter}`; counter++; }
+            let text = (concept.text || '').replace(/[^ -\u007F]/g, '');
+            if (!text) text = 'Node';
+            validNodeIds.add(id);
+            processedNodes.push({ id, text, originalId: concept.id });
+        }
+        if (processedNodes.length === 0) {
+            return 'graph TD\nErrorNode["No valid concepts available"]';
+        }
+        // Add nodes
+        for (const [i, node] of processedNodes.entries()) {
+            // Assign class: accent for first, then pastel for others
+            let nodeClass = i === 0 ? 'accent' : (i % 3 === 1 ? 'pastel-blue' : (i % 3 === 2 ? 'pastel-green' : 'pastel-pink'));
+            lines.push(`${node.id}["${node.text}"]:::${nodeClass}`);
+        }
+        // Edge pass
+        for (const concept of concepts) {
+            if (!concept || !concept.id || !concept.connections) continue;
+            const processedNode = processedNodes.find(n => n.originalId === concept.id);
+            if (!processedNode) continue;
+            const fromId = processedNode.id;
+            for (const conn of concept.connections) {
+                if (!conn || !conn.targetId) continue;
+                const targetProcessedNode = processedNodes.find(n => n.originalId === conn.targetId);
+                if (!targetProcessedNode) continue;
+                const toId = targetProcessedNode.id;
+                let label = (conn.label || 'relates to').replace(/[^ -\u007F]/g, '');
+                if (fromId === toId) continue;
+                lines.push(`${fromId} -.->|<span class='connector-label'>${label}</span>| ${toId}`);
             }
-        });
-
+        }
+        // Modern style: add a blank line, then classDefs (NO filter property)
+        lines.push('');
+        lines.push('classDef accent fill:#e0e7ff,stroke:#6366f1,stroke-width:2.5px,color:#222,rx:22px,ry:22px,font-weight:bold;');
+        lines.push('classDef pastel-blue fill:#dbeafe,stroke:#60a5fa,stroke-width:2px,color:#222,rx:18px,ry:18px;');
+        lines.push('classDef pastel-green fill:#d1fae5,stroke:#34d399,stroke-width:2px,color:#222,rx:18px,ry:18px;');
+        lines.push('classDef pastel-pink fill:#fce7f3,stroke:#f472b6,stroke-width:2px,color:#222,rx:18px,ry:18px;');
+        // Join lines
+        const diagram = lines.join('\n');
         return diagram;
     } catch (error) {
-        console.error('Error creating Mermaid diagram:', error);
-        return 'graph TD\n  Error["Error creating diagram"]';
+        return 'graph TD\nErrorNode["Error creating diagram"]';
     }
 }
 

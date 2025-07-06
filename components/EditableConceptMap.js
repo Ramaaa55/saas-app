@@ -5,7 +5,7 @@ import mermaid from "mermaid";
 import { toast } from "react-hot-toast";
 import { createMermaidDiagram } from '@/services/conceptMapGenerator';
 
-function MermaidRenderer({ diagram, onNodeClick, selectedNodeId }) {
+function MermaidRenderer({ diagram, onNodeClick, selectedNodeId, onNodeDoubleClick }) {
     const hostRef = useRef(null);
     const [isRendering, setIsRendering] = useState(true);
 
@@ -96,6 +96,19 @@ function MermaidRenderer({ diagram, onNodeClick, selectedNodeId }) {
     );
 }
 
+function FormattingToolbar({ onFormat, onUndo, onRedo, canUndo, canRedo }) {
+    return (
+        <div className="absolute z-50 bg-white border border-gray-200 rounded-lg shadow-md flex gap-2 p-2 top-[-2.5rem] left-1/2 -translate-x-1/2">
+            <button className="font-bold px-2" onMouseDown={e => { e.preventDefault(); onFormat('bold'); }} title="Bold"><b>B</b></button>
+            <button className="italic px-2" onMouseDown={e => { e.preventDefault(); onFormat('italic'); }} title="Italic"><i>I</i></button>
+            <button className="underline px-2" onMouseDown={e => { e.preventDefault(); onFormat('underline'); }} title="Underline"><u>U</u></button>
+            <button className="bg-yellow-200 px-2 rounded" onMouseDown={e => { e.preventDefault(); onFormat('hiliteColor', '#fef08a'); }} title="Highlight">H</button>
+            <button className="px-2" onMouseDown={e => { e.preventDefault(); onUndo(); }} disabled={!canUndo} title="Undo">⎌</button>
+            <button className="px-2" onMouseDown={e => { e.preventDefault(); onRedo(); }} disabled={!canRedo} title="Redo">↻</button>
+        </div>
+    );
+}
+
 export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
     const [isEditing, setIsEditing] = useState(false);
     const [selectedNode, setSelectedNode] = useState(null);
@@ -106,6 +119,11 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
     const [richTextContent, setRichTextContent] = useState('');
     const [selectedText, setSelectedText] = useState('');
     const lastDiagramRef = useRef(editedMap?.mermaidDiagram);
+    const [editingNodeId, setEditingNodeId] = useState(null);
+    const [editValue, setEditValue] = useState('');
+    const [editHistory, setEditHistory] = useState([]);
+    const [redoStack, setRedoStack] = useState([]);
+    const editRef = useRef(null);
 
     // Debug logging to understand data structure
     useEffect(() => {
@@ -363,6 +381,66 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
         setShowCodeEditor(false);
     };
 
+    // Inline edit handlers
+    const handleNodeDoubleClick = (nodeId) => {
+        const node = conceptMap.nodes?.find(n => n.id === nodeId);
+        if (node) {
+            setEditingNodeId(nodeId);
+            setEditValue(node.data.label);
+            setEditHistory([node.data.label]);
+            setRedoStack([]);
+            setTimeout(() => {
+                if (editRef.current) editRef.current.focus();
+            }, 50);
+        }
+    };
+    const handleEditInput = (e) => {
+        setEditValue(e.currentTarget.innerHTML);
+    };
+    const handleEditBlur = () => {
+        if (editingNodeId) {
+            // Update node label and re-render
+            const updatedNodes = conceptMap.nodes.map(n =>
+                n.id === editingNodeId ? { ...n, data: { ...n.data, label: editValue } } : n
+            );
+            const updatedConcepts = updatedNodes.map(n => ({
+                id: n.id,
+                text: n.data.label,
+                connections: conceptMap.connections.filter(c => c.source === n.id).map(c => ({ targetId: c.target, label: c.label }))
+            }));
+            const newDiagram = createMermaidDiagram(updatedConcepts);
+            onSave({ ...conceptMap, nodes: updatedNodes, mermaidDiagram: newDiagram });
+            setEditingNodeId(null);
+        }
+    };
+    const handleFormat = (cmd, value) => {
+        document.execCommand(cmd, false, value);
+        setEditValue(editRef.current.innerHTML);
+        setEditHistory(h => [...h, editRef.current.innerHTML]);
+        setRedoStack([]);
+    };
+    const handleUndo = () => {
+        setEditHistory(h => {
+            if (h.length > 1) {
+                const newHistory = h.slice(0, -1);
+                setEditValue(newHistory[newHistory.length - 1]);
+                setRedoStack(r => [h[h.length - 1], ...r]);
+                return newHistory;
+            }
+            return h;
+        });
+    };
+    const handleRedo = () => {
+        setRedoStack(r => {
+            if (r.length > 0) {
+                setEditHistory(h => [...h, r[0]]);
+                setEditValue(r[0]);
+                return r.slice(1);
+            }
+            return r;
+        });
+    };
+
     return (
         <div className="w-full">
             <div className="flex justify-end mb-4 gap-2">
@@ -475,6 +553,7 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
                             key={editedMap?.mermaidDiagram || 'empty-diagram'} 
                             diagram={editedMap?.mermaidDiagram}
                             onNodeClick={handleNodeClick}
+                            onNodeDoubleClick={handleNodeDoubleClick}
                             selectedNodeId={selectedNode?.id}
                         />
                     )}
@@ -601,6 +680,33 @@ export default function EditableConceptMap({ conceptMap, onSave, isSaving }) {
                     </div>
                 )}
             </div>
+            {editingNodeId && (
+                <div className="fixed inset-0 flex items-center justify-center bg-black/10 z-50">
+                    <div className="bg-white rounded-2xl shadow-2xl p-6 min-w-[320px] max-w-[90vw] relative">
+                        <FormattingToolbar
+                            onFormat={handleFormat}
+                            onUndo={handleUndo}
+                            onRedo={handleRedo}
+                            canUndo={editHistory.length > 1}
+                            canRedo={redoStack.length > 0}
+                        />
+                        <div
+                            ref={editRef}
+                            className="border border-gray-300 rounded-lg p-3 min-h-[48px] outline-none focus:ring-2 focus:ring-blue-400 text-lg font-sans"
+                            contentEditable
+                            suppressContentEditableWarning
+                            onInput={handleEditInput}
+                            onBlur={handleEditBlur}
+                            tabIndex={0}
+                            aria-label="Edit node text"
+                            dangerouslySetInnerHTML={{ __html: editValue }}
+                        />
+                        <div className="flex justify-end mt-2">
+                            <button className="px-4 py-1 bg-blue-600 text-white rounded hover:bg-blue-700" onMouseDown={e => { e.preventDefault(); handleEditBlur(); }}>Save</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 } 
