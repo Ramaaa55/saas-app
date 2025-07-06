@@ -574,245 +574,173 @@ export function preprocessDiagram(concepts) {
     }));
 }
 
-/**
- * Validates Mermaid diagram syntax with comprehensive error reporting
- * @param {string} diagram
- * @returns {{valid: boolean, error?: string, details?: Array}}
- */
+// Helper: sanitize node IDs for Mermaid (letters, numbers, underscores, hyphens, must start with letter)
+function sanitizeMermaidId(id) {
+    if (!id || typeof id !== 'string') return 'node';
+    let safe = id.replace(/[^a-zA-Z0-9_\-]/g, '_');
+    if (!/^[a-zA-Z]/.test(safe)) safe = 'node_' + safe;
+    return safe;
+}
+
+// PATCH: Enhanced validateMermaidDiagram
 export function validateMermaidDiagram(diagram) {
     if (!diagram || typeof diagram !== 'string') {
         return { valid: false, error: 'Empty diagram' };
     }
-    
     const lines = diagram.split('\n');
     let errorDetails = [];
-    
     // Check first line for proper graph declaration
     if (lines.length === 0 || !lines[0].trim().startsWith('graph')) {
         return { valid: false, error: 'Missing or invalid graph declaration. Must start with "graph TD"' };
     }
-    
-    // Check for error nodes
     if (/ErrorNode/.test(diagram)) {
         return { valid: false, error: 'Error node present in diagram' };
     }
-    
-    // Line-by-line validation
+    // Track if inside a valid node/edge/classDef
     lines.forEach((line, idx) => {
         const lineNum = idx + 1;
         const trimmedLine = line.trim();
-        
-        // Skip empty lines and comments
-        if (!trimmedLine || trimmedLine.startsWith('%%')) {
-            return;
-        }
-        
-        // Check for proper node definitions
-        if (trimmedLine.includes('[') && trimmedLine.includes(']')) {
-            // Node definition validation
-            const nodeMatch = trimmedLine.match(/^(\w+)\["([^"]*)"\]/);
+        if (!trimmedLine || trimmedLine.startsWith('%%')) return;
+        // Node definition
+        if (trimmedLine.match(/\w+\["/)) {
+            const nodeMatch = trimmedLine.match(/^(\w+)\["([^\"]*)"\]/);
             if (!nodeMatch) {
-                errorDetails.push(`Line ${lineNum}: Invalid node definition syntax`);
+                errorDetails.push(`Line ${lineNum}: Invalid node definition syntax: ${trimmedLine}`);
             } else {
                 const nodeId = nodeMatch[1];
                 const nodeText = nodeMatch[2];
-                
-                // Check for valid node ID
                 if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(nodeId)) {
                     errorDetails.push(`Line ${lineNum}: Invalid node ID "${nodeId}" - must start with letter`);
                 }
-                
-                // Check for empty node text
                 if (!nodeText.trim()) {
                     errorDetails.push(`Line ${lineNum}: Empty node text`);
                 }
-                
-                // Check for unescaped quotes in node text
                 if (nodeText.includes('"') && !nodeText.includes('\\"')) {
-                    errorDetails.push(`Line ${lineNum}: Unescaped quote in node text`);
+                    errorDetails.push(`Line ${lineNum}: Unescaped quote in node text: ${nodeText}`);
                 }
             }
+            return;
         }
-        
-        // Check for proper edge definitions
+        // Edge definition
         if (trimmedLine.includes('-->')) {
-            // Edge definition validation
-            const edgeMatch = trimmedLine.match(/^(\w+)\s*-->\s*\|"([^"]*)"\|\s*(\w+)$/);
+            const edgeMatch = trimmedLine.match(/^(\w+)\s*-->\s*\|"([^\"]*)"\|\s*(\w+)$/);
             if (!edgeMatch) {
-                errorDetails.push(`Line ${lineNum}: Invalid edge definition syntax`);
+                errorDetails.push(`Line ${lineNum}: Invalid edge definition syntax: ${trimmedLine}`);
             } else {
                 const fromId = edgeMatch[1];
                 const label = edgeMatch[2];
                 const toId = edgeMatch[3];
-                
-                // Check for valid node IDs
                 if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(fromId)) {
                     errorDetails.push(`Line ${lineNum}: Invalid source node ID "${fromId}"`);
                 }
                 if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(toId)) {
                     errorDetails.push(`Line ${lineNum}: Invalid target node ID "${toId}"`);
                 }
-                
-                // Check for empty edge label
                 if (!label.trim()) {
                     errorDetails.push(`Line ${lineNum}: Empty edge label`);
                 }
-                
-                // Check for unescaped quotes in edge label
                 if (label.includes('"') && !label.includes('\\"')) {
-                    errorDetails.push(`Line ${lineNum}: Unescaped quote in edge label`);
+                    errorDetails.push(`Line ${lineNum}: Unescaped quote in edge label: ${label}`);
                 }
             }
+            return;
         }
-        
-        // Check for classDef definitions
+        // classDef
         if (trimmedLine.startsWith('classDef')) {
             const classDefMatch = trimmedLine.match(/^classDef\s+(\w+)\s+(.+)$/);
             if (!classDefMatch) {
-                errorDetails.push(`Line ${lineNum}: Invalid classDef syntax`);
+                errorDetails.push(`Line ${lineNum}: Invalid classDef syntax: ${trimmedLine}`);
             } else {
                 const className = classDefMatch[1];
-                const styles = classDefMatch[2];
-                
-                // Check for valid class name
+                let styles = classDefMatch[2];
                 if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(className)) {
                     errorDetails.push(`Line ${lineNum}: Invalid class name "${className}"`);
                 }
-                
-                // Check for valid style properties
-                const styleProps = styles.split(',');
-                for (const prop of styleProps) {
+                // PATCH: auto-correct malformed style properties
+                styles = styles.split(',').map(prop => {
                     const [key, value] = prop.split(':').map(s => s.trim());
                     if (!key || !value) {
-                        errorDetails.push(`Line ${lineNum}: Invalid style property "${prop}"`);
+                        errorDetails.push(`Line ${lineNum}: Invalid style property "${prop}" in classDef`);
+                        return null;
                     }
-                }
+                    return `${key}:${value}`;
+                }).filter(Boolean).join(',');
             }
+            return;
         }
-        
-        // Check for problematic characters
-        if (/[\[\]{}|<>]/.test(trimmedLine) && !trimmedLine.startsWith('classDef')) {
-            errorDetails.push(`Line ${lineNum}: Special characters that may cause syntax issues`);
+        // Only flag problematic characters if not in node/edge/classDef
+        if (/[[\]{}<>]/.test(trimmedLine)) {
+            errorDetails.push(`Line ${lineNum}: Special characters that may cause syntax issues: ${trimmedLine}`);
         }
     });
-    
     if (errorDetails.length > 0) {
-        console.error('Mermaid validation errors:', errorDetails);
-        console.error('Full Mermaid diagram:', diagram);
-        return { 
-            valid: false, 
+        return {
+            valid: false,
             error: `Syntax issues: ${errorDetails.slice(0, 3).join(', ')}${errorDetails.length > 3 ? '...' : ''}`,
             details: errorDetails
         };
     }
-    
     return { valid: true };
 }
 
-/**
- * Creates a Mermaid.js diagram from the processed concepts
- * @param {Array} concepts - Array of processed concept objects
- * @returns {string} Mermaid.js diagram syntax
- */
+// PATCH: Use sanitizeMermaidId for all node/edge IDs, and sanitizeMermaidText for all labels
 export function createMermaidDiagram(concepts, inputText = '') {
     const sanitizedConcepts = preprocessDiagram(concepts);
     if (!Array.isArray(sanitizedConcepts) || !sanitizedConcepts.every(c => typeof c === 'object' && c !== null && 'id' in c && 'text' in c)) {
         return 'graph TD\nErrorNode["Malformed concept data: expected array of concept objects"]';
     }
-    
     try {
-        // Start with proper graph declaration
         let lines = ['graph TD'];
-        
-        // Add Mermaid configuration
         lines.push('%%{init: {"themeVariables": {"fontFamily": "Inter, system-ui, sans-serif", "fontSize": "16px", "nodeSpacing": 80, "rankSpacing": 100, "curve": "basis", "edgeLabelBackground": "#fff"}, "flowchart": {"htmlLabels": true, "useMaxWidth": true}}}%%');
-        
         const validNodeIds = new Set();
         const processedNodes = [];
-        
-        // Process nodes first
         for (const concept of sanitizedConcepts) {
             if (!concept || !concept.id) continue;
-            
-            // Create a safe node ID
-            let id = concept.id.toString()
-                .replace(/[^a-zA-Z0-9_\-]/g, '_')
-                .replace(/^[^a-zA-Z]/, 'node_$&');
-            
-            if (!/^[a-zA-Z]/.test(id)) id = 'node_' + id;
+            let id = sanitizeMermaidId(concept.id);
             let originalId = id;
             let counter = 1;
-            while (validNodeIds.has(id)) { 
-                id = `${originalId}_${counter}`; 
-                counter++; 
-            }
-            
-            // Process node text using sanitization
+            while (validNodeIds.has(id)) { id = `${originalId}_${counter}`; counter++; }
             let text = (concept.text || '').trim();
             if (!text) text = 'Node';
             text = sanitizeMermaidText(text);
-            
             validNodeIds.add(id);
             processedNodes.push({ id, text, originalId: concept.id });
         }
-        
         if (processedNodes.length === 0) {
             return 'graph TD\nErrorNode["No valid concepts available"]';
         }
-        
-        // Add nodes with proper Mermaid syntax
         for (const [i, node] of processedNodes.entries()) {
-            // Assign class: accent for first, then pastel for others
             let nodeClass = i === 0 ? 'accent' : (i % 3 === 1 ? 'pastel-blue' : (i % 3 === 2 ? 'pastel-green' : 'pastel-pink'));
             lines.push(`${node.id}["${node.text}"]:::${nodeClass}`);
         }
-        
-        // Add edges with proper Mermaid syntax
         for (const concept of sanitizedConcepts) {
             if (!concept || !concept.id || !concept.connections) continue;
             const processedNode = processedNodes.find(n => n.originalId === concept.id);
             if (!processedNode) continue;
             const fromId = processedNode.id;
-            
             for (const conn of concept.connections) {
                 if (!conn || !conn.targetId) continue;
                 const targetProcessedNode = processedNodes.find(n => n.originalId === conn.targetId);
                 if (!targetProcessedNode) continue;
                 const toId = targetProcessedNode.id;
-                
-                // Process edge label
                 let label = (conn.label || 'relates to').trim();
                 label = sanitizeMermaidText(label);
-                
-                if (fromId === toId) continue; // Skip self-loops
-                
-                // Use proper Mermaid edge syntax with label
+                if (fromId === toId) continue;
                 lines.push(`${fromId} -->|"${label}"| ${toId}`);
             }
         }
-        
-        // Add styling definitions
         lines.push('');
         lines.push('classDef accent fill:#e0e7ff,stroke:#6366f1,stroke-width:2.5px,color:#222,rx:22px,ry:22px,font-weight:bold');
         lines.push('classDef pastel-blue fill:#dbeafe,stroke:#60a5fa,stroke-width:2px,color:#222,rx:18px,ry:18px');
         lines.push('classDef pastel-green fill:#d1fae5,stroke:#34d399,stroke-width:2px,color:#222,rx:18px,ry:18px');
         lines.push('classDef pastel-pink fill:#fce7f3,stroke:#f472b6,stroke-width:2px,color:#222,rx:18px,ry:18px');
-        
-        // Join lines
         const diagram = lines.join('\n');
-        
-        // Validate before returning
         const validation = validateMermaidDiagram(diagram);
         if (!validation.valid) {
-            console.error('Mermaid validation error:', validation.error);
-            console.error('Generated diagram:', diagram);
             return `graph TD\nErrorNode["⚠️ Could not render due to syntax issues: ${validation.error}"]`;
         }
-        
         return diagram;
     } catch (error) {
-        console.error('Error creating Mermaid diagram:', error);
-        console.error('Concepts that caused the error:', sanitizedConcepts);
         return 'graph TD\nErrorNode["Error creating diagram"]';
     }
 }
