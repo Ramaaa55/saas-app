@@ -6,6 +6,13 @@ import mermaid from 'mermaid';
 const ConceptMapVisualizer = ({ conceptMap }) => {
     const containerRef = useRef(null);
 
+    // Extract error message if present
+    let errorMessage = null;
+    if (conceptMap?.mermaidDiagram && /ErrorNode\["([^"]+)"\]/.test(conceptMap.mermaidDiagram)) {
+        const match = conceptMap.mermaidDiagram.match(/ErrorNode\["([^"]+)"\]/);
+        errorMessage = match ? match[1] : null;
+    }
+
     useEffect(() => {
         // Configure mermaid with aesthetic settings
         mermaid.initialize({
@@ -44,13 +51,15 @@ const ConceptMapVisualizer = ({ conceptMap }) => {
             }
         });
 
-        // Render the diagram
-        if (containerRef.current && conceptMap?.mermaidDiagram) {
+        // Render the diagram only if no error
+        if (containerRef.current && conceptMap?.mermaidDiagram && !errorMessage) {
             mermaid.render('concept-map', conceptMap.mermaidDiagram).then(({ svg }) => {
                 containerRef.current.innerHTML = svg;
             });
+        } else if (containerRef.current) {
+            containerRef.current.innerHTML = '';
         }
-    }, [conceptMap]);
+    }, [conceptMap, errorMessage]);
 
     if (!conceptMap) {
         return (
@@ -62,6 +71,12 @@ const ConceptMapVisualizer = ({ conceptMap }) => {
 
     return (
         <div className="w-full overflow-auto bg-base-100 rounded-lg p-4">
+            {errorMessage && (
+                <div className="mb-4 p-3 rounded bg-yellow-100 border border-yellow-300 text-yellow-800 font-semibold flex items-center gap-2">
+                    <span role="img" aria-label="Warning">⚠️</span>
+                    {errorMessage}
+                </div>
+            )}
             <div 
                 ref={containerRef} 
                 className="concept-map-container"

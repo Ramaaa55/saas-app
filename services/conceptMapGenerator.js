@@ -14,6 +14,13 @@ const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
 const LANGDETECT_API_URL = 'https://api.languagedetector.com/v1/detect';
 
 /**
+ * Lightweight English dictionary for spell-checking (expand as needed)
+ */
+const ENGLISH_DICTIONARY = new Set([
+    'concept', 'map', 'node', 'relationship', 'connection', 'main', 'sub', 'detail', 'example', 'contains', 'includes', 'comprises', 'consists', 'part', 'precedes', 'follows', 'evolves', 'develops', 'supports', 'enables', 'facilitates', 'enhances', 'improves', 'relates', 'connects', 'associates', 'correlates', 'requires', 'needs', 'depends', 'influences', 'affects', 'founded', 'composed', 'born', 'formed', 'influenced', 'poetry', 'music', 'rock', 'progressive', 'band', 'song', 'lyrics', 'paragraph', 'detail', 'example', 'explanation', 'definition', 'label', 'trigger', 'result', 'cause', 'lead', 'support', 'improve', 'enhance', 'facilitate', 'associate', 'correlate', 'require', 'need', 'depend', 'influence', 'affect', 'connect', 'relate', 'enable', 'develop', 'precede', 'follow', 'contain', 'include', 'comprise', 'consist', 'part', 'main', 'sub', 'detail', 'node', 'relationship', 'connection', 'concept', 'map', 'diagram', 'visual', 'render', 'error', 'please', 'try', 'again', 'synopsis', 'title', 'created', 'at', 'confidence', 'source', 'analysis', 'language', 'id', 'type', 'data', 'position', 'x', 'y', 'animated', 'custom', 'style', 'stroke', 'width', 'color', 'marker', 'end', 'arrow', 'closed', 'height', 'metadata', 'mermaid', 'diagram', 'class', 'accent', 'pastel', 'blue', 'green', 'pink', 'fill', 'stroke', 'font', 'weight', 'bold', 'small', 'strong', 'u', 'em', 'br', 'span', 'connector', 'label', 'definition', 'paragraph', 'content', 'example', 'context', 'detail', 'information', 'specific', 'date', 'contextual', 'relevance', 'directional', 'logic', 'non', 'circular', 'redundant', 'duplicate', 'domain', 'specific', 'network', 'rich', 'structure', 'vocabulary', 'action', 'oriented', 'verb', 'based', 'clear', 'unambiguous', 'maximum', 'words', 'english', 'spanish', 'input', 'output', 'user', 'text', 'ai', 'pipeline', 'processing', 'json', 'array', 'object', 'objects', 'string', 'identifier', 'unique', 'main', 'sub', 'detail', 'connections', 'target', 'id', 'label', 'maximum', 'using', 'structured', 'vocabulary', 'class', 'string', 'indicating', 'node', 'type', 'styling', 'main', 'idea', 'secondary', 'idea', 'example', 'important', 'do', 'not', 'omit', 'shorten', 'any', 'information', 'from', 'user', 'input', 'the', 'more', 'user', 'writes', 'the', 'more', 'detail', 'you', 'must', 'include', 'in', 'map', 'each', 'node', 'contains', 'rich', 'paragraph', 'style', 'content', 'with', 'specific', 'examples', 'context', 'use', 'html', 'tags', 'for', 'styling', 'avoid', 'raw', 'markdown', 'syntax', 'example', 'founder', 'argentine', 'rock', 'pioneer', 'progressive', 'work', 'characterized', 'deep', 'lyrical', 'musical', 'exploration', 'fusing', 'elements', 'surrealist', 'poetry', 'sonic', 'innovations', 'born', 'buenos', 'aires', 'formed', 'band', 'almendra', 'influenced', 'rimbaud', 'composed', 'over', 'songs', 'fuse', 'rock', 'poetry', 'muchacha', 'ojos', 'de', 'papel', 'masterpiece', 'lyrics', 'rockera', 'founder', 'rock', 'argentino', 'pionero', 'progresivo', 'caracteriza', 'profunda', 'exploracion', 'lirica', 'musical', 'fusionando', 'elementos', 'poesia', 'surrealista', 'innovaciones', 'sonoras', 'nacido', 'buenos', 'aires', 'formo', 'banda', 'almendra', 'influenciado', 'poesia', 'rimbaud', 'compuso', 'mas', 'de', 'canciones', 'fusionan', 'rock', 'poesia', 'ejemplo', 'muchacha', 'ojos', 'de', 'papel', 'obra', 'maestra', 'lirica', 'rockera'
+]);
+
+/**
  * Escapes text for direct inclusion within a Mermaid node's quoted string.
  * This function handles internal double quotes and backslashes.
  * Mermaid expects double quotes to be escaped with a backslash (\").
@@ -316,70 +323,329 @@ async function validateConceptMap(conceptMap) {
 }
 
 /**
+ * Spell-checks and sanitizes a string for Mermaid safety.
+ * - Corrects misspelled words using a basic dictionary
+ * - Escapes problematic characters for Mermaid while preserving meaning
+ * - Logs corrections and sanitizations
+ * @param {string} text
+ * @returns {string}
+ */
+function spellCheckAndSanitize(text) {
+    if (!text) return '';
+    
+    // Remove HTML tags for spell-checking, but keep them for output
+    const htmlTagRegex = /<[^>]*>/g;
+    const words = text.replace(htmlTagRegex, ' ').split(/\b/);
+    let corrected = false;
+    let corrections = [];
+    
+    const correctedWords = words.map(word => {
+        const clean = word.toLowerCase().replace(/[^a-záéíóúñü]/gi, '');
+        if (clean && !ENGLISH_DICTIONARY.has(clean) && /^[a-záéíóúñü]{3,}$/.test(clean)) {
+            // Find closest match (Levenshtein distance 1)
+            let suggestion = null;
+            for (const dictWord of ENGLISH_DICTIONARY) {
+                if (levenshtein(clean, dictWord) === 1) {
+                    suggestion = dictWord;
+                    break;
+                }
+            }
+            if (suggestion) {
+                corrections.push({ from: word, to: suggestion });
+                corrected = true;
+                return suggestion;
+            } else {
+                corrections.push({ from: word, to: '[?]' });
+                corrected = true;
+                return word;
+            }
+        }
+        return word;
+    });
+    
+    let result = correctedWords.join('');
+    
+    // Mermaid-safe character handling
+    result = result
+        // Handle newlines and carriage returns
+        .replace(/\r\n|\n|\r/g, ' ')
+        // Handle multiple spaces
+        .replace(/\s+/g, ' ')
+        // Handle special characters that Mermaid doesn't like in node text
+        .replace(/[\[\]{}]/g, (match) => {
+            switch(match) {
+                case '[': return '(';
+                case ']': return ')';
+                case '{': return '(';
+                case '}': return ')';
+                default: return match;
+            }
+        })
+        // Handle quotes - escape them properly for Mermaid
+        .replace(/"/g, '\\"')
+        // Handle backslashes - escape them properly
+        .replace(/\\/g, '\\\\')
+        // Handle other problematic characters
+        .replace(/[|]/g, 'I') // Replace pipe with capital I
+        .replace(/[<>]/g, (match) => match === '<' ? '(' : ')') // Replace < > with parentheses
+        // Remove control characters except tab
+        .replace(/[\x00-\x08\x0B-\x1F\x7F]/g, '')
+        // Handle accented characters - keep them but ensure they're properly encoded
+        .normalize('NFC');
+    
+    // Ensure the result is not empty
+    if (!result.trim()) {
+        result = 'Content';
+    }
+    
+    if (corrected) {
+        console.log('Spell-check corrections:', corrections);
+    }
+    
+    return result.trim();
+}
+
+/**
+ * Levenshtein distance for spell-check suggestions
+ */
+function levenshtein(a, b) {
+    const matrix = [];
+    let i;
+    for (i = 0; i <= b.length; i++) {
+        matrix[i] = [i];
+    }
+    let j;
+    for (j = 0; j <= a.length; j++) {
+        matrix[0][j] = j;
+    }
+    for (i = 1; i <= b.length; i++) {
+        for (j = 1; j <= a.length; j++) {
+            if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+            } else {
+                matrix[i][j] = Math.min(
+                    matrix[i - 1][j - 1] + 1, // substitution
+                    matrix[i][j - 1] + 1,     // insertion
+                    matrix[i - 1][j] + 1      // deletion
+                );
+            }
+        }
+    }
+    return matrix[b.length][a.length];
+}
+
+/**
+ * Preprocesses the AI-generated concept array for Mermaid safety and spelling
+ * @param {Array} concepts
+ * @returns {Array} sanitized concepts
+ */
+export function preprocessDiagram(concepts) {
+    if (!Array.isArray(concepts)) return [];
+    return concepts.map(concept => ({
+        ...concept,
+        text: spellCheckAndSanitize(concept.text),
+        definition: spellCheckAndSanitize(concept.definition),
+        connections: Array.isArray(concept.connections)
+            ? concept.connections.map(conn => ({
+                ...conn,
+                label: spellCheckAndSanitize(conn.label)
+            })) : []
+    }));
+}
+
+/**
+ * Validates Mermaid diagram syntax with better error reporting
+ * @param {string} diagram
+ * @returns {{valid: boolean, error?: string}}
+ */
+export function validateMermaidDiagram(diagram) {
+    if (!diagram || typeof diagram !== 'string') {
+        return { valid: false, error: 'Empty diagram' };
+    }
+    
+    if (!diagram.trim().startsWith('graph')) {
+        return { valid: false, error: 'Missing graph declaration' };
+    }
+    
+    if (/ErrorNode/.test(diagram)) {
+        return { valid: false, error: 'Error node present' };
+    }
+    
+    // Check for problematic patterns in Mermaid syntax
+    const lines = diagram.split('\n');
+    let errorDetails = [];
+    
+    lines.forEach((line, idx) => {
+        const lineNum = idx + 1;
+        
+        // Check for unescaped quotes in node definitions
+        if (line.includes('["') && !line.includes('\\"')) {
+            const quoteMatch = line.match(/\["([^"]*)"\]/);
+            if (quoteMatch && quoteMatch[1].includes('"')) {
+                errorDetails.push(`Line ${lineNum}: Unescaped quote in node text`);
+            }
+        }
+        
+        // Check for problematic characters in node text
+        if (line.includes('["') && /[\[\]{}|<>]/.test(line)) {
+            errorDetails.push(`Line ${lineNum}: Special characters in node text`);
+        }
+        
+        // Check for empty node definitions
+        if (/\w+\[\s*\]/.test(line)) {
+            errorDetails.push(`Line ${lineNum}: Empty node definition`);
+        }
+        
+        // Check for malformed edge definitions
+        if (line.includes('-->') && !line.match(/\w+\s*-->\s*\w+/)) {
+            errorDetails.push(`Line ${lineNum}: Malformed edge definition`);
+        }
+    });
+    
+    if (errorDetails.length > 0) {
+        console.error('Mermaid validation errors:', errorDetails);
+        console.error('Full Mermaid diagram:', diagram);
+        return { 
+            valid: false, 
+            error: `Syntax issues: ${errorDetails.slice(0, 3).join(', ')}${errorDetails.length > 3 ? '...' : ''}` 
+        };
+    }
+    
+    return { valid: true };
+}
+
+/**
  * Creates a Mermaid.js diagram from the processed concepts
  * @param {Array} concepts - Array of processed concept objects
  * @returns {string} Mermaid.js diagram syntax
  */
 export function createMermaidDiagram(concepts, inputText = '') {
-    if (!Array.isArray(concepts) || !concepts.every(c => typeof c === 'object' && c !== null && 'id' in c && 'text' in c)) {
+    const sanitizedConcepts = preprocessDiagram(concepts);
+    if (!Array.isArray(sanitizedConcepts) || !sanitizedConcepts.every(c => typeof c === 'object' && c !== null && 'id' in c && 'text' in c)) {
         return 'graph TD\nErrorNode["Malformed concept data: expected array of concept objects"]';
     }
     try {
         // Header
         let lines = ['graph TD'];
-        // Mermaid config for modern spacing
-        lines.push('%%{init: {"themeVariables": {"fontFamily": "Inter, system-ui, sans-serif", "fontSize": "16px", "nodeSpacing": 80, "rankSpacing": 100, "curve": "basis", "edgeLabelBackground": "#fff"}}}%%');
+        // Mermaid config for modern spacing and better character support
+        lines.push('%%{init: {"themeVariables": {"fontFamily": "Inter, system-ui, sans-serif", "fontSize": "16px", "nodeSpacing": 80, "rankSpacing": 100, "curve": "basis", "edgeLabelBackground": "#fff"}, "flowchart": {"htmlLabels": true, "useMaxWidth": true}}}%%');
         const validNodeIds = new Set();
         const processedNodes = [];
         const processedEdges = [];
+        
         // Node pass
-        for (const concept of concepts) {
+        for (const concept of sanitizedConcepts) {
             if (!concept || !concept.id) continue;
-            let id = concept.id.toString().replace(/[^a-zA-Z0-9_\-]/g, '_');
+            
+            // Create a safe node ID
+            let id = concept.id.toString()
+                .replace(/[^a-zA-Z0-9_\-]/g, '_')
+                .replace(/^[^a-zA-Z]/, 'node_$&');
+            
             if (!/^[a-zA-Z]/.test(id)) id = 'node_' + id;
             let originalId = id;
             let counter = 1;
-            while (validNodeIds.has(id)) { id = `${originalId}_${counter}`; counter++; }
-            let text = (concept.text || '').replace(/[^ -\u007F]/g, '');
+            while (validNodeIds.has(id)) { 
+                id = `${originalId}_${counter}`; 
+                counter++; 
+            }
+            
+            // Process node text - ensure it's Mermaid-safe
+            let text = (concept.text || '').trim();
             if (!text) text = 'Node';
+            
+            // Additional safety check for node text
+            text = text
+                .replace(/\s+/g, ' ') // Normalize whitespace
+                .replace(/[\[\]{}]/g, (match) => {
+                    switch(match) {
+                        case '[': return '(';
+                        case ']': return ')';
+                        case '{': return '(';
+                        case '}': return ')';
+                        default: return match;
+                    }
+                })
+                .replace(/"/g, '\\"') // Escape quotes
+                .replace(/\\/g, '\\\\') // Escape backslashes
+                .replace(/[|]/g, 'I') // Replace pipe with I
+                .replace(/[<>]/g, (match) => match === '<' ? '(' : ')') // Replace < > with parentheses
+                .substring(0, 200); // Limit length to prevent issues
+            
             validNodeIds.add(id);
             processedNodes.push({ id, text, originalId: concept.id });
         }
+        
         if (processedNodes.length === 0) {
             return 'graph TD\nErrorNode["No valid concepts available"]';
         }
+        
         // Add nodes
         for (const [i, node] of processedNodes.entries()) {
             // Assign class: accent for first, then pastel for others
             let nodeClass = i === 0 ? 'accent' : (i % 3 === 1 ? 'pastel-blue' : (i % 3 === 2 ? 'pastel-green' : 'pastel-pink'));
             lines.push(`${node.id}["${node.text}"]:::${nodeClass}`);
         }
+        
         // Edge pass
-        for (const concept of concepts) {
+        for (const concept of sanitizedConcepts) {
             if (!concept || !concept.id || !concept.connections) continue;
             const processedNode = processedNodes.find(n => n.originalId === concept.id);
             if (!processedNode) continue;
             const fromId = processedNode.id;
+            
             for (const conn of concept.connections) {
                 if (!conn || !conn.targetId) continue;
                 const targetProcessedNode = processedNodes.find(n => n.originalId === conn.targetId);
                 if (!targetProcessedNode) continue;
                 const toId = targetProcessedNode.id;
-                let label = (conn.label || 'relates to').replace(/[^ -\u007F]/g, '');
-                if (fromId === toId) continue;
-                lines.push(`${fromId} -.->|<span class='connector-label'>${label}</span>| ${toId}`);
+                
+                // Process edge label - ensure it's Mermaid-safe
+                let label = (conn.label || 'relates to').trim();
+                label = label
+                    .replace(/\s+/g, ' ') // Normalize whitespace
+                    .replace(/[\[\]{}]/g, (match) => {
+                        switch(match) {
+                            case '[': return '(';
+                            case ']': return ')';
+                            case '{': return '(';
+                            case '}': return ')';
+                            default: return match;
+                        }
+                    })
+                    .replace(/"/g, '\\"') // Escape quotes
+                    .replace(/\\/g, '\\\\') // Escape backslashes
+                    .replace(/[|]/g, 'I') // Replace pipe with I
+                    .replace(/[<>]/g, (match) => match === '<' ? '(' : ')') // Replace < > with parentheses
+                    .substring(0, 50); // Limit length
+                
+                if (fromId === toId) continue; // Skip self-loops
+                
+                // Use a safer edge syntax
+                lines.push(`${fromId} -.->|"${label}"| ${toId}`);
             }
         }
-        // Modern style: add a blank line, then classDefs (NO filter property)
+        
+        // Modern style: add a blank line, then classDefs
         lines.push('');
         lines.push('classDef accent fill:#e0e7ff,stroke:#6366f1,stroke-width:2.5px,color:#222,rx:22px,ry:22px,font-weight:bold;');
         lines.push('classDef pastel-blue fill:#dbeafe,stroke:#60a5fa,stroke-width:2px,color:#222,rx:18px,ry:18px;');
         lines.push('classDef pastel-green fill:#d1fae5,stroke:#34d399,stroke-width:2px,color:#222,rx:18px,ry:18px;');
         lines.push('classDef pastel-pink fill:#fce7f3,stroke:#f472b6,stroke-width:2px,color:#222,rx:18px,ry:18px;');
+        
         // Join lines
         const diagram = lines.join('\n');
+        
+        // Validate before returning
+        const validation = validateMermaidDiagram(diagram);
+        if (!validation.valid) {
+            console.error('Mermaid validation error:', validation.error);
+            return `graph TD\nErrorNode["⚠️ Could not render due to syntax issues: ${validation.error}"]`;
+        }
+        
         return diagram;
     } catch (error) {
+        console.error('Error creating Mermaid diagram:', error);
         return 'graph TD\nErrorNode["Error creating diagram"]';
     }
 }
