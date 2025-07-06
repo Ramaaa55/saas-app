@@ -21,6 +21,157 @@ const ENGLISH_DICTIONARY = new Set([
 ]);
 
 /**
+ * Comprehensive Mermaid text sanitization that preserves meaning while ensuring syntax safety
+ * @param {string} text - Input text that may contain special characters, accents, symbols, emojis
+ * @returns {string} Mermaid-safe text that preserves the original meaning
+ */
+export function sanitizeMermaidText(text) {
+    if (!text || typeof text !== 'string') return '';
+    
+    let result = text;
+    
+    // Step 1: Normalize Unicode characters (combines combining characters)
+    result = result.normalize('NFC');
+    
+    // Step 2: Handle HTML entities and tags
+    result = result
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&nbsp;/g, ' ');
+    
+    // Step 3: Handle newlines and whitespace
+    result = result
+        .replace(/\r\n|\r|\n/g, ' ') // Convert all newlines to spaces
+        .replace(/\s+/g, ' ') // Normalize multiple spaces
+        .trim();
+    
+    // Step 4: Handle Mermaid syntax conflicts
+    result = result
+        // Escape quotes properly for Mermaid node syntax
+        .replace(/"/g, '\\"')
+        // Escape backslashes
+        .replace(/\\/g, '\\\\')
+        // Replace problematic characters that break Mermaid syntax
+        .replace(/[\[\]{}]/g, (match) => {
+            switch(match) {
+                case '[': return '(';
+                case ']': return ')';
+                case '{': return '(';
+                case '}': return ')';
+                default: return match;
+            }
+        })
+        // Replace pipe character (used in Mermaid for subgraphs)
+        .replace(/\|/g, 'I')
+        // Replace angle brackets
+        .replace(/[<>]/g, (match) => match === '<' ? '(' : ')')
+        // Replace other problematic characters
+        .replace(/[`~!@#$%^&*+=|\\:;'",.?]/g, (match) => {
+            // Keep some punctuation but escape others
+            if (['.', ',', '!', '?', ':', ';'].includes(match)) {
+                return match; // Keep these
+            }
+            return ' '; // Replace others with space
+        });
+    
+    // Step 5: Remove control characters except tab
+    result = result.replace(/[\x00-\x08\x0B-\x1F\x7F]/g, '');
+    
+    // Step 6: Ensure the result is not empty and has reasonable length
+    if (!result.trim()) {
+        result = 'Content';
+    } else if (result.length > 200) {
+        result = result.substring(0, 197) + '...';
+    }
+    
+    return result.trim();
+}
+
+/**
+ * Test suite for special character handling
+ * @returns {Object} Test results
+ */
+export function testSpecialCharacterHandling() {
+    const testCases = [
+        // Accented characters
+        { input: 'José María', expected: 'José María', description: 'Spanish accented names' },
+        { input: 'München', expected: 'München', description: 'German umlaut' },
+        { input: 'Canción', expected: 'Canción', description: 'Spanish with accent' },
+        { input: 'François', expected: 'François', description: 'French with cedilla' },
+        
+        // Math symbols
+        { input: 'Δx = 5', expected: 'Δx = 5', description: 'Greek delta' },
+        { input: '∑ = sum', expected: '∑ = sum', description: 'Sigma symbol' },
+        { input: 'π ≈ 3.14', expected: 'π ≈ 3.14', description: 'Pi symbol' },
+        { input: 'α + β = γ', expected: 'α + β = γ', description: 'Greek letters' },
+        
+        // Emojis
+        { input: '📈 Growth', expected: '📈 Growth', description: 'Chart emoji' },
+        { input: '🚀 Launch', expected: '🚀 Launch', description: 'Rocket emoji' },
+        { input: '💡 Idea', expected: '💡 Idea', description: 'Lightbulb emoji' },
+        { input: '🎯 Target', expected: '🎯 Target', description: 'Target emoji' },
+        
+        // Special symbols
+        { input: '© 2024', expected: '© 2024', description: 'Copyright symbol' },
+        { input: '™ Brand', expected: '™ Brand', description: 'Trademark symbol' },
+        { input: '® Registered', expected: '® Registered', description: 'Registered symbol' },
+        { input: '€ 100', expected: '€ 100', description: 'Euro symbol' },
+        { input: '£ 50', expected: '£ 50', description: 'Pound symbol' },
+        { input: '¥ 1000', expected: '¥ 1000', description: 'Yen symbol' },
+        
+        // Problematic characters that should be converted
+        { input: 'Node [with] brackets', expected: 'Node (with) brackets', description: 'Square brackets' },
+        { input: 'Node {with} braces', expected: 'Node (with) braces', description: 'Curly braces' },
+        { input: 'Node | with | pipe', expected: 'Node I with I pipe', description: 'Pipe characters' },
+        { input: 'Node <with> angles', expected: 'Node (with) angles', description: 'Angle brackets' },
+        
+        // Quotes and escaping
+        { input: 'Node "with" quotes', expected: 'Node \\"with\\" quotes', description: 'Double quotes' },
+        { input: 'Node with\\backslash', expected: 'Node with\\\\backslash', description: 'Backslashes' },
+        
+        // HTML entities
+        { input: 'Node &amp; entity', expected: 'Node & entity', description: 'HTML ampersand entity' },
+        { input: 'Node &lt;html&gt;', expected: 'Node (html)', description: 'HTML tag entities' },
+        
+        // Mixed content
+        { input: 'José 📈 [Growth] "2024"', expected: 'José 📈 (Growth) \\"2024\\"', description: 'Mixed special characters' },
+        { input: 'Δx = ∑[i=1 to n] x_i', expected: 'Δx = ∑(i=1 to n) x_i', description: 'Math with brackets' },
+    ];
+    
+    const results = {
+        passed: 0,
+        failed: 0,
+        details: []
+    };
+    
+    testCases.forEach((testCase, index) => {
+        const sanitized = sanitizeMermaidText(testCase.input);
+        const passed = sanitized === testCase.expected;
+        
+        if (passed) {
+            results.passed++;
+        } else {
+            results.failed++;
+        }
+        
+        results.details.push({
+            test: index + 1,
+            description: testCase.description,
+            input: testCase.input,
+            expected: testCase.expected,
+            actual: sanitized,
+            passed
+        });
+    });
+    
+    console.log('Special Character Test Results:', results);
+    return results;
+}
+
+/**
  * Escapes text for direct inclusion within a Mermaid node's quoted string.
  * This function handles internal double quotes and backslashes.
  * Mermaid expects double quotes to be escaped with a backslash (\").
@@ -365,44 +516,14 @@ function spellCheckAndSanitize(text) {
     
     let result = correctedWords.join('');
     
-    // Mermaid-safe character handling
-    result = result
-        // Handle newlines and carriage returns
-        .replace(/\r\n|\n|\r/g, ' ')
-        // Handle multiple spaces
-        .replace(/\s+/g, ' ')
-        // Handle special characters that Mermaid doesn't like in node text
-        .replace(/[\[\]{}]/g, (match) => {
-            switch(match) {
-                case '[': return '(';
-                case ']': return ')';
-                case '{': return '(';
-                case '}': return ')';
-                default: return match;
-            }
-        })
-        // Handle quotes - escape them properly for Mermaid
-        .replace(/"/g, '\\"')
-        // Handle backslashes - escape them properly
-        .replace(/\\/g, '\\\\')
-        // Handle other problematic characters
-        .replace(/[|]/g, 'I') // Replace pipe with capital I
-        .replace(/[<>]/g, (match) => match === '<' ? '(' : ')') // Replace < > with parentheses
-        // Remove control characters except tab
-        .replace(/[\x00-\x08\x0B-\x1F\x7F]/g, '')
-        // Handle accented characters - keep them but ensure they're properly encoded
-        .normalize('NFC');
-    
-    // Ensure the result is not empty
-    if (!result.trim()) {
-        result = 'Content';
-    }
+    // Use the new comprehensive sanitization
+    result = sanitizeMermaidText(result);
     
     if (corrected) {
         console.log('Spell-check corrections:', corrections);
     }
     
-    return result.trim();
+    return result;
 }
 
 /**
@@ -524,6 +645,7 @@ export function createMermaidDiagram(concepts, inputText = '') {
     if (!Array.isArray(sanitizedConcepts) || !sanitizedConcepts.every(c => typeof c === 'object' && c !== null && 'id' in c && 'text' in c)) {
         return 'graph TD\nErrorNode["Malformed concept data: expected array of concept objects"]';
     }
+    
     try {
         // Header
         let lines = ['graph TD'];
@@ -550,27 +672,12 @@ export function createMermaidDiagram(concepts, inputText = '') {
                 counter++; 
             }
             
-            // Process node text - ensure it's Mermaid-safe
+            // Process node text using the new sanitization function
             let text = (concept.text || '').trim();
             if (!text) text = 'Node';
             
-            // Additional safety check for node text
-            text = text
-                .replace(/\s+/g, ' ') // Normalize whitespace
-                .replace(/[\[\]{}]/g, (match) => {
-                    switch(match) {
-                        case '[': return '(';
-                        case ']': return ')';
-                        case '{': return '(';
-                        case '}': return ')';
-                        default: return match;
-                    }
-                })
-                .replace(/"/g, '\\"') // Escape quotes
-                .replace(/\\/g, '\\\\') // Escape backslashes
-                .replace(/[|]/g, 'I') // Replace pipe with I
-                .replace(/[<>]/g, (match) => match === '<' ? '(' : ')') // Replace < > with parentheses
-                .substring(0, 200); // Limit length to prevent issues
+            // Use the comprehensive sanitization
+            text = sanitizeMermaidText(text);
             
             validNodeIds.add(id);
             processedNodes.push({ id, text, originalId: concept.id });
@@ -600,24 +707,9 @@ export function createMermaidDiagram(concepts, inputText = '') {
                 if (!targetProcessedNode) continue;
                 const toId = targetProcessedNode.id;
                 
-                // Process edge label - ensure it's Mermaid-safe
+                // Process edge label using the new sanitization function
                 let label = (conn.label || 'relates to').trim();
-                label = label
-                    .replace(/\s+/g, ' ') // Normalize whitespace
-                    .replace(/[\[\]{}]/g, (match) => {
-                        switch(match) {
-                            case '[': return '(';
-                            case ']': return ')';
-                            case '{': return '(';
-                            case '}': return ')';
-                            default: return match;
-                        }
-                    })
-                    .replace(/"/g, '\\"') // Escape quotes
-                    .replace(/\\/g, '\\\\') // Escape backslashes
-                    .replace(/[|]/g, 'I') // Replace pipe with I
-                    .replace(/[<>]/g, (match) => match === '<' ? '(' : ')') // Replace < > with parentheses
-                    .substring(0, 50); // Limit length
+                label = sanitizeMermaidText(label);
                 
                 if (fromId === toId) continue; // Skip self-loops
                 
@@ -640,12 +732,14 @@ export function createMermaidDiagram(concepts, inputText = '') {
         const validation = validateMermaidDiagram(diagram);
         if (!validation.valid) {
             console.error('Mermaid validation error:', validation.error);
+            console.error('Generated diagram:', diagram);
             return `graph TD\nErrorNode["⚠️ Could not render due to syntax issues: ${validation.error}"]`;
         }
         
         return diagram;
     } catch (error) {
         console.error('Error creating Mermaid diagram:', error);
+        console.error('Concepts that caused the error:', sanitizedConcepts);
         return 'graph TD\nErrorNode["Error creating diagram"]';
     }
 }

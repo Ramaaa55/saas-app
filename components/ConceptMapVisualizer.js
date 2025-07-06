@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 
 const ConceptMapVisualizer = ({ conceptMap }) => {
     const containerRef = useRef(null);
+    const [renderError, setRenderError] = useState(null);
+    const [isRendering, setIsRendering] = useState(false);
 
     // Extract error message if present
     let errorMessage = null;
@@ -14,9 +16,9 @@ const ConceptMapVisualizer = ({ conceptMap }) => {
     }
 
     useEffect(() => {
-        // Configure mermaid with aesthetic settings
+        // Configure mermaid with aesthetic settings and better error handling
         mermaid.initialize({
-            startOnLoad: true,
+            startOnLoad: false, // We'll render manually
             theme: 'base',
             securityLevel: 'loose',
             flowchart: {
@@ -51,14 +53,48 @@ const ConceptMapVisualizer = ({ conceptMap }) => {
             }
         });
 
-        // Render the diagram only if no error
-        if (containerRef.current && conceptMap?.mermaidDiagram && !errorMessage) {
-            mermaid.render('concept-map', conceptMap.mermaidDiagram).then(({ svg }) => {
-                containerRef.current.innerHTML = svg;
-            });
-        } else if (containerRef.current) {
-            containerRef.current.innerHTML = '';
-        }
+        // Render the diagram with comprehensive error handling
+        const renderDiagram = async () => {
+            if (!containerRef.current || !conceptMap?.mermaidDiagram || errorMessage) {
+                if (containerRef.current) {
+                    containerRef.current.innerHTML = '';
+                }
+                setRenderError(null);
+                setIsRendering(false);
+                return;
+            }
+
+            setIsRendering(true);
+            setRenderError(null);
+
+            try {
+                // First, try to parse the diagram to catch syntax errors early
+                mermaid.parse(conceptMap.mermaidDiagram);
+                
+                // If parsing succeeds, render the diagram
+                const { svg } = await mermaid.render('concept-map', conceptMap.mermaidDiagram);
+                
+                if (containerRef.current) {
+                    containerRef.current.innerHTML = svg;
+                }
+                
+                setRenderError(null);
+            } catch (error) {
+                console.error('Mermaid rendering error:', error);
+                console.error('Diagram that caused the error:', conceptMap.mermaidDiagram);
+                
+                // Set a user-friendly error message
+                setRenderError('⚠️ Concept map failed to render due to unsupported characters or syntax issues.');
+                
+                if (containerRef.current) {
+                    containerRef.current.innerHTML = '';
+                }
+            } finally {
+                setIsRendering(false);
+            }
+        };
+
+        renderDiagram();
     }, [conceptMap, errorMessage]);
 
     if (!conceptMap) {
@@ -71,12 +107,30 @@ const ConceptMapVisualizer = ({ conceptMap }) => {
 
     return (
         <div className="w-full overflow-auto bg-base-100 rounded-lg p-4">
+            {/* Display validation errors from the diagram generation */}
             {errorMessage && (
                 <div className="mb-4 p-3 rounded bg-yellow-100 border border-yellow-300 text-yellow-800 font-semibold flex items-center gap-2">
                     <span role="img" aria-label="Warning">⚠️</span>
                     {errorMessage}
                 </div>
             )}
+            
+            {/* Display rendering errors */}
+            {renderError && (
+                <div className="mb-4 p-3 rounded bg-red-100 border border-red-300 text-red-800 font-semibold flex items-center gap-2">
+                    <span role="img" aria-label="Error">❌</span>
+                    {renderError}
+                </div>
+            )}
+            
+            {/* Loading state */}
+            {isRendering && (
+                <div className="mb-4 p-3 rounded bg-blue-100 border border-blue-300 text-blue-800 font-semibold flex items-center gap-2">
+                    <span role="img" aria-label="Loading">⏳</span>
+                    Rendering concept map...
+                </div>
+            )}
+            
             <div 
                 ref={containerRef} 
                 className="concept-map-container"
