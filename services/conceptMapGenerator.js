@@ -690,10 +690,10 @@ export function createMermaidDiagram(concepts, inputText = '') {
         return 'graph TD\nErrorNode["Malformed concept data: expected array of concept objects"]';
     }
     try {
-        let lines = ['graph TD'];
+    let lines = ['graph TD'];
         lines.push('%%{init: {"themeVariables": {"fontFamily": "Inter, system-ui, sans-serif", "fontSize": "16px", "nodeSpacing": 80, "rankSpacing": 100, "curve": "basis", "edgeLabelBackground": "#fff"}, "flowchart": {"htmlLabels": true, "useMaxWidth": true}}}%%');
-        const validNodeIds = new Set();
-        const processedNodes = [];
+    const validNodeIds = new Set();
+    const processedNodes = [];
         for (const concept of sanitizedConcepts) {
             if (!concept || !concept.id) continue;
             let id = sanitizeMermaidId(concept.id);
@@ -703,11 +703,11 @@ export function createMermaidDiagram(concepts, inputText = '') {
             let text = (concept.text || '').trim();
             if (!text) text = 'Node';
             text = sanitizeMermaidText(text);
-            validNodeIds.add(id);
+      validNodeIds.add(id);
             processedNodes.push({ id, text, originalId: concept.id });
-        }
-        if (processedNodes.length === 0) {
-            return 'graph TD\nErrorNode["No valid concepts available"]';
+    }
+    if (processedNodes.length === 0) {
+      return 'graph TD\nErrorNode["No valid concepts available"]';
         }
         for (const [i, node] of processedNodes.entries()) {
             let nodeClass = i === 0 ? 'accent' : (i % 3 === 1 ? 'pastel-blue' : (i % 3 === 2 ? 'pastel-green' : 'pastel-pink'));
@@ -734,15 +734,15 @@ export function createMermaidDiagram(concepts, inputText = '') {
         lines.push('classDef pastel-blue fill:#dbeafe,stroke:#60a5fa,stroke-width:2px,color:#222,rx:18px,ry:18px');
         lines.push('classDef pastel-green fill:#d1fae5,stroke:#34d399,stroke-width:2px,color:#222,rx:18px,ry:18px');
         lines.push('classDef pastel-pink fill:#fce7f3,stroke:#f472b6,stroke-width:2px,color:#222,rx:18px,ry:18px');
-        const diagram = lines.join('\n');
-        const validation = validateMermaidDiagram(diagram);
-        if (!validation.valid) {
+    const diagram = lines.join('\n');
+    const validation = validateMermaidDiagram(diagram);
+    if (!validation.valid) {
             return `graph TD\nErrorNode["⚠️ Could not render due to syntax issues: ${validation.error}"]`;
-        }
-        return diagram;
-    } catch (error) {
-        return 'graph TD\nErrorNode["Error creating diagram"]';
     }
+        return diagram;
+  } catch (error) {
+    return 'graph TD\nErrorNode["Error creating diagram"]';
+  }
 }
 
 /**
