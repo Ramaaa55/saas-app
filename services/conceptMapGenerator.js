@@ -611,23 +611,49 @@ function sanitizeMermaidLabelUnicode(text) {
     return `"${result}"`;
 }
 
-// --- Mermaid Preprocessor Middleware ---
-function preprocessMermaidDiagram(diagram) {
-    // 1. Clean classDef lines: remove invisible Unicode, smart quotes, non-ASCII in style values
-    const lines = diagram.split('\n');
+// --- Universal Mermaid Preprocessing Middleware ---
+function universalMermaidPreprocessor(diagram) {
+    // Normalize all line endings
+    let lines = diagram.replace(/\r\n?/g, '\n').split('\n');
     const cleanedLines = lines.map(line => {
-        if (line.trim().startsWith('classDef')) {
-            // Replace smart quotes and invisible Unicode
-            let safe = line
-                .replace(/[\u2018\u2019\u201C\u201D\u2013\u2014]/g, "'") // smart quotes/dashes
-                .replace(/[\u200B-\u200D\uFEFF\u2060\u00AD]/g, '') // zero-width, soft hyphen
-                .replace(/[^\x20-\x7E]/g, ''); // remove non-ASCII
-            // Remove any trailing/leading whitespace
+        // Replace smart quotes and dashes with ASCII
+        let safe = line
+            .replace(/[\u2018\u2019]/g, "'") // single quotes
+            .replace(/[\u201C\u201D]/g, '"') // double quotes
+            .replace(/[\u2013\u2014]/g, '-') // dashes
+            .replace(/[\u200B-\u200D\uFEFF\u2060\u00AD]/g, '') // zero-width, soft hyphen
+            .replace(/[\u2028\u2029]/g, ' '); // line/para sep
+        // Remove all non-ASCII except for allowed Unicode in labels
+        if (safe.trim().startsWith('classDef')) {
+            // Only allow ASCII in classDef
+            safe = safe.replace(/[^\x20-\x7E]/g, '');
             return safe.trim();
         }
-        // 2. Clean node/edge labels only if they break Mermaid syntax (not over-sanitizing)
-        // (Handled by sanitizeMermaidLabelUnicode in node/edge generation)
-        return line;
+        // For node/edge lines, ensure labels are quoted and escaped
+        // Node: id["label"] or id["label"]:::class
+        let nodeMatch = safe.match(/^(\w+)\[(.*)\](?:::(\w+))?/);
+        if (nodeMatch) {
+            let id = nodeMatch[1];
+            let label = nodeMatch[2];
+            let nodeClass = nodeMatch[3] ? `:::${nodeMatch[3]}` : '';
+            // Remove any stray brackets/quotes
+            label = label.replace(/^"|"$/g, '');
+            // Escape double quotes and backslashes
+            label = label.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+            // Re-wrap in double quotes
+            return `${id}["${label}"]${nodeClass}`;
+        }
+        // Edge: id -->|"label"| id
+        let edgeMatch = safe.match(/^(\w+)\s*-->\|(.+)\|\s*(\w+)$/);
+        if (edgeMatch) {
+            let from = edgeMatch[1];
+            let label = edgeMatch[2];
+            let to = edgeMatch[3];
+            label = label.replace(/^"|"$/g, '');
+            label = label.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+            return `${from} -->|"${label}"| ${to}`;
+        }
+        return safe;
     });
     return cleanedLines.join('\n');
 }
@@ -685,16 +711,14 @@ function createMermaidDiagram(concepts, inputText = '') {
         lines.push(sanitizeClassDefLine('classDef pastel-blue fill:#dbeafe;stroke:#60a5fa;stroke-width:2px;color:#222;rx:18px;ry:18px'));
         lines.push(sanitizeClassDefLine('classDef pastel-green fill:#d1fae5;stroke:#34d399;stroke-width:2px;color:#222;rx:18px;ry:18px'));
         lines.push(sanitizeClassDefLine('classDef pastel-pink fill:#fce7f3;stroke:#f472b6;stroke-width:2px;color:#222;rx:18px;ry:18px'));
-        // --- Preprocess and pre-validate ---
+        // --- Universal Preprocessing and Pre-validation ---
         let diagram = lines.join('\n');
-        diagram = preprocessMermaidDiagram(diagram);
+        diagram = universalMermaidPreprocessor(diagram);
         // Proactive validation: simulate mermaid.parse if available (in Node, fallback to regex)
         try {
-            // If running in browser with mermaid available, use mermaid.parse
             if (typeof window !== 'undefined' && window.mermaid && window.mermaid.parse) {
                 window.mermaid.parse(diagram);
             } else {
-                // Fallback: basic regex for classDef and node syntax
                 if (/classDef [^ ]+ [^;]+;?/.test(diagram) === false) {
                     throw new Error('Malformed classDef detected');
                 }
@@ -703,7 +727,6 @@ function createMermaidDiagram(concepts, inputText = '') {
             return `graph TD\nErrorNode["❌ Mermaid syntax error: ${e.message.replace(/"/g, '\\"')}"]\n%%MERMAID_ERROR%%\n${diagram}`;
         }
         // --- End pre-validation ---
-        // Validate with existing logic
         const validation = validateMermaidDiagram(diagram);
         if (!validation.valid) {
             return `graph TD\nErrorNode["❌ Mermaid syntax error: ${validation.error.replace(/"/g, '\\"')}"]\n%%MERMAID_ERROR%%\n${diagram}`;
