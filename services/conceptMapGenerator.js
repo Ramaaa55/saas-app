@@ -658,6 +658,56 @@ function universalMermaidPreprocessor(diagram) {
     return cleanedLines.join('\n');
 }
 
+// --- Dedicated Mermaid Pre-render Sanitizer Middleware ---
+function sanitizeMermaidString(diagram) {
+    // Normalize all line endings
+    let lines = diagram.replace(/\r\n?/g, '\n').split('\n');
+    const cleanedLines = lines.map(line => {
+        // Replace smart quotes, dashes, and normalize Unicode
+        let safe = line
+            .normalize('NFKC')
+            .replace(/[\u2018\u2019]/g, "'") // single quotes
+            .replace(/[\u201C\u201D]/g, '"') // double quotes
+            .replace(/[\u2013\u2014]/g, '-') // dashes
+            .replace(/[\u200B-\u200D\uFEFF\u2060\u00AD]/g, '') // zero-width, soft hyphen
+            .replace(/[\u2028\u2029\u00A0]/g, ' ') // line/para sep, non-breaking space
+            .replace(/[\x00-\x08\x0B-\x1F\x7F]/g, ''); // control chars
+        // classDef: only allow ASCII and valid CSS tokens
+        if (safe.trim().startsWith('classDef')) {
+            safe = safe.replace(/[^\x20-\x7E]/g, '');
+            return safe.trim();
+        }
+        // Node: id["label"] or id["label"]:::class
+        let nodeMatch = safe.match(/^(\w+)\[(.*)\](?:::(\w+))?/);
+        if (nodeMatch) {
+            let id = nodeMatch[1];
+            let label = nodeMatch[2];
+            let nodeClass = nodeMatch[3] ? `:::${nodeMatch[3]}` : '';
+            // Remove stray brackets/quotes, normalize, escape
+            label = label.replace(/^"|"$/g, '').normalize('NFKC');
+            label = label.replace(/[\u2028\u2029\u00A0]/g, ' ');
+            label = label.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/:/g, '\\:');
+            // Optionally wrap in backticks if double quotes are problematic
+            // label = '`' + label.replace(/`/g, '\\`') + '`';
+            return `${id}["${label}"]${nodeClass}`;
+        }
+        // Edge: id -->|"label"| id
+        let edgeMatch = safe.match(/^(\w+)\s*-->\|(.+)\|\s*(\w+)$/);
+        if (edgeMatch) {
+            let from = edgeMatch[1];
+            let label = edgeMatch[2];
+            let to = edgeMatch[3];
+            label = label.replace(/^"|"$/g, '').normalize('NFKC');
+            label = label.replace(/[\u2028\u2029\u00A0]/g, ' ');
+            label = label.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/:/g, '\\:');
+            // label = '`' + label.replace(/`/g, '\\`') + '`';
+            return `${from} -->|"${label}"| ${to}`;
+        }
+        return safe;
+    });
+    return cleanedLines.join('\n');
+}
+
 // Generación ordenada y segura del string Mermaid
 function createMermaidDiagram(concepts, inputText = '') {
     const sanitizedConcepts = preprocessDiagram(concepts);
@@ -711,9 +761,9 @@ function createMermaidDiagram(concepts, inputText = '') {
         lines.push(sanitizeClassDefLine('classDef pastel-blue fill:#dbeafe;stroke:#60a5fa;stroke-width:2px;color:#222;rx:18px;ry:18px'));
         lines.push(sanitizeClassDefLine('classDef pastel-green fill:#d1fae5;stroke:#34d399;stroke-width:2px;color:#222;rx:18px;ry:18px'));
         lines.push(sanitizeClassDefLine('classDef pastel-pink fill:#fce7f3;stroke:#f472b6;stroke-width:2px;color:#222;rx:18px;ry:18px'));
-        // --- Universal Preprocessing and Pre-validation ---
+        // --- Pre-render Sanitization and Pre-validation ---
         let diagram = lines.join('\n');
-        diagram = universalMermaidPreprocessor(diagram);
+        diagram = sanitizeMermaidString(diagram);
         // Proactive validation: simulate mermaid.parse if available (in Node, fallback to regex)
         try {
             if (typeof window !== 'undefined' && window.mermaid && window.mermaid.parse) {
@@ -724,6 +774,10 @@ function createMermaidDiagram(concepts, inputText = '') {
                 }
             }
         } catch (e) {
+            // Log error and Mermaid code for debugging
+            if (typeof window !== 'undefined') {
+                console.error('[MermaidSanitizer] Mermaid parse error:', e.message, diagram);
+            }
             return `graph TD\nErrorNode["❌ Mermaid syntax error: ${e.message.replace(/"/g, '\\"')}"]\n%%MERMAID_ERROR%%\n${diagram}`;
         }
         // --- End pre-validation ---
