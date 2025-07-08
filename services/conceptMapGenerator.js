@@ -567,31 +567,44 @@ function sanitizeMermaidId(id) {
     return safe;
 }
 
-// Función para limpiar ligaduras y caracteres Unicode sospechosos en estilos Mermaid
-function cleanMermaidStyle(style) {
-    // Reemplaza ligaduras y símbolos Unicode comunes por ASCII
-    return style
-        .replace(/[\uFB00-\uFFFF]/g, '') // Elimina ligaduras y símbolos raros
-        .replace(/：/g, ':') // Dos puntos fullwidth
-        .replace(/；/g, ';') // Punto y coma fullwidth
-        .replace(/，/g, ',') // Coma fullwidth
-        .replace(/。/g, '.') // Punto fullwidth
-        .replace(/（/g, '(') // Paréntesis fullwidth
-        .replace(/）/g, ')') // Paréntesis fullwidth
-        .replace(/–/g, '-') // Guion largo
-        .replace(/—/g, '-') // Guion em dash
-        .replace(/“|”/g, '"') // Comillas
-        .replace(/’|‘/g, "'"); // Comillas simples
+// Utilidad: Sanitiza y valida cada propiedad de classDef
+const VALID_CSS_KEYS = new Set(['fill','stroke','stroke-width','color','rx','ry','font-weight','font-size','font-family','shadow','padding','margin','opacity','background','border','text-align','font-style','font-variant','font-stretch','font','shape','width','height','display','align','justify','text-shadow','box-shadow']);
+const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
+function sanitizeClassDefLine(line) {
+    if (!line.startsWith('classDef')) return '';
+    const parts = line.split(' ');
+    if (parts.length < 3) return '';
+    const className = parts[1].replace(/[^\w\-]/g, '');
+    const styleString = parts.slice(2).join(' ');
+    const styleTokens = styleString.split(';').map(token => token.trim()).filter(Boolean);
+    const safeTokens = styleTokens.map(token => {
+        const [key, value] = token.split(':').map(s => s.trim());
+        if (!VALID_CSS_KEYS.has(key)) return '';
+        // Color value
+        if (key.includes('color') || key === 'fill' || key === 'stroke') {
+            if (HEX_COLOR_REGEX.test(value)) return `${key}:${value}`;
+            return '';
+        }
+        // px, bold, numeric, etc.
+        if (/^[\d.]+px$/.test(value) || /^[\d.]+$/.test(value) || value === 'bold' || value === 'normal' || value === 'italic') {
+            return `${key}:${value}`;
+        }
+        // font-family, text-align, etc.
+        if (/^[\w\- ,]+$/.test(value)) return `${key}:${value}`;
+        return '';
+    }).filter(Boolean);
+    return `classDef ${className} ${safeTokens.join(';')}`;
 }
 
-// Sanitización robusta para etiquetas Mermaid
-function sanitizeMermaidLabel(text) {
+// Utilidad: Escapa node/edge labels a Unicode seguro
+function sanitizeMermaidLabelUnicode(text) {
     if (!text) return '""';
     let result = text.normalize('NFC')
         .replace(/\r?\n|\r/g, ' ')
         .replace(/\\/g, '\\\\')
         .replace(/"/g, '\\"')
-        .replace(/[\x00-\x08\x0B-\x1F\x7F]/g, '');
+        .replace(/[  -  ]/g, '')
+        .replace(/[^\x20-\x7E]/g, c => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
     return `"${result}"`;
 }
 
@@ -614,7 +627,7 @@ function createMermaidDiagram(concepts, inputText = '') {
             while (validNodeIds.has(id)) { id = `${originalId}_${counter}`; counter++; }
             let text = (concept.text || '').trim();
             if (!text) text = 'Node';
-            text = sanitizeMermaidLabel(text);
+            text = sanitizeMermaidLabelUnicode(text);
             validNodeIds.add(id);
             processedNodes.push({ id, text, originalId: concept.id });
         }
@@ -638,22 +651,22 @@ function createMermaidDiagram(concepts, inputText = '') {
                 if (!targetProcessedNode) continue;
                 const toId = targetProcessedNode.id;
                 let label = (conn.label || 'relates to').trim();
-                label = sanitizeMermaidLabel(label);
+                label = sanitizeMermaidLabelUnicode(label);
                 if (fromId === toId) continue;
                 lines.push(`${fromId} -->|${label}| ${toId}`);
             }
         }
-        // classDef siempre al final
-        lines.push('');
-        lines.push('classDef accent fill:#e0e7ff;stroke:#6366f1;stroke-width:2.5px;color:#222;rx:22px;ry:22px;font-weight:bold');
-        lines.push('classDef pastel-blue fill:#dbeafe;stroke:#60a5fa;stroke-width:2px;color:#222;rx:18px;ry:18px');
-        lines.push('classDef pastel-green fill:#d1fae5;stroke:#34d399;stroke-width:2px;color:#222;rx:18px;ry:18px');
-        lines.push('classDef pastel-pink fill:#fce7f3;stroke:#f472b6;stroke-width:2px;color:#222;rx:18px;ry:18px');
+        // classDef siempre al final y sanitizado por tokens
+        lines.push(sanitizeClassDefLine('classDef accent fill:#e0e7ff;stroke:#6366f1;stroke-width:2.5px;color:#222;rx:22px;ry:22px;font-weight:bold'));
+        lines.push(sanitizeClassDefLine('classDef pastel-blue fill:#dbeafe;stroke:#60a5fa;stroke-width:2px;color:#222;rx:18px;ry:18px'));
+        lines.push(sanitizeClassDefLine('classDef pastel-green fill:#d1fae5;stroke:#34d399;stroke-width:2px;color:#222;rx:18px;ry:18px'));
+        lines.push(sanitizeClassDefLine('classDef pastel-pink fill:#fce7f3;stroke:#f472b6;stroke-width:2px;color:#222;rx:18px;ry:18px'));
         const diagram = lines.join('\n');
-        // Validación proactiva
+        // Validación proactiva y amigable
         const validation = validateMermaidDiagram(diagram);
         if (!validation.valid) {
-            return `graph TD\nErrorNode["⚠️ Could not render due to syntax issues: ${validation.error}"]`;
+            // Fallback amigable: muestra el Mermaid y el error
+            return `graph TD\nErrorNode["❌ Mermaid syntax error: ${validation.error.replace(/"/g, '\\"')}"]\n%%MERMAID_ERROR%%\n${diagram}`;
         }
         if (validation.corrected) {
             console.warn('[MermaidDiagram] Auto-corrected diagram used:', { warning: validation.warning, corrected: validation.corrected });
@@ -686,12 +699,14 @@ function validateMermaidDiagram(diagram) {
         const lineNum = idx + 1;
         const trimmedLine = line.trim();
         if (!trimmedLine || trimmedLine.startsWith('%%')) return;
-        // classDef debe ir después de los nodos/edges
-        if (trimmedLine.startsWith('classDef') && !foundNodeOrEdge) {
-            errorDetails.push(`Line ${lineNum}: classDef before any node/edge`);
-            autoCorrected = true;
-            correctedLines.splice(idx, 1); // Elimina y lo agregamos al final
-            correctedLines.push(trimmedLine);
+        // classDef debe ir después de los nodos/edges y solo con tokens válidos
+        if (trimmedLine.startsWith('classDef')) {
+            const sanitized = sanitizeClassDefLine(trimmedLine);
+            if (sanitized !== trimmedLine) {
+                errorDetails.push(`Line ${lineNum}: Invalid or unsafe classDef: ${trimmedLine}`);
+                autoCorrected = true;
+                correctedLines[idx] = sanitized;
+            }
             return;
         }
         // Node
@@ -716,10 +731,6 @@ function validateMermaidDiagram(diagram) {
                 correctedLines[idx] = safe;
                 autoCorrected = true;
             }
-            return;
-        }
-        // classDef (al final está bien)
-        if (trimmedLine.startsWith('classDef')) {
             return;
         }
         // Caracteres problemáticos

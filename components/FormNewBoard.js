@@ -18,9 +18,13 @@ import { useSession } from "next-auth/react";
  */
 const FormNewBoard = () => {
     const router = useRouter();
-    const { data: session } = useSession();
+    const { data: session, status } = useSession();
     const [text, setText] = useState("");
     const [isLoading, setIsLoading] = useState(false);
+
+    if (status === 'loading') {
+        return <div>Loading session...</div>;
+    }
 
     /**
      * Handles form submission:
@@ -38,12 +42,25 @@ const FormNewBoard = () => {
             return;
         }
 
+        // Espera a que la sesión esté cargando
+        if (status === 'loading') {
+            toast.loading("Checking session...");
+            return;
+        }
+
+        if (!session || !session.user || !session.user.id) {
+            toast.error("You must be logged in to create a concept map.");
+            setIsLoading(false);
+            return;
+        }
+
         setIsLoading(true);
 
         try {
             // Generate the concept map
             const conceptMap = await generateConceptMap(text);
             console.log('Generated conceptMap:', conceptMap);
+            // Validación robusta de sesión
             // Save the concept map
             const saveResult = await saveConceptMap(conceptMap, session.user.id);
             console.log('Save result:', saveResult);
