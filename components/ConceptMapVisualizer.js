@@ -157,7 +157,12 @@ const ConceptMapVisualizer = ({ conceptMap }) => {
                     )}
                     <div className="mt-3 text-xs text-red-600">
                         <p><strong>Original input:</strong> {conceptMap.title || 'No title'}</p>
-                        <p><strong>Generated diagram:</strong> Check browser console for full diagram code</p>
+                        <p><strong>Generated diagram:</strong></p>
+                        <pre className="bg-gray-100 p-2 rounded overflow-x-auto text-xs max-h-48">{conceptMap.mermaidDiagram}</pre>
+                        <button
+                            className="btn btn-xs btn-outline mt-2"
+                            onClick={() => navigator.clipboard.writeText(conceptMap.mermaidDiagram)}
+                        >Copy Error Details</button>
                     </div>
                 </div>
             )}

@@ -572,14 +572,17 @@ const VALID_CSS_KEYS = new Set(['fill','stroke','stroke-width','color','rx','ry'
 const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
 function sanitizeClassDefLine(line) {
     if (!line.startsWith('classDef')) return '';
+    // Only allow ASCII, valid CSS keys/values, and safe class names
     const parts = line.split(' ');
     if (parts.length < 3) return '';
-    const className = parts[1].replace(/[^\w\-]/g, '');
+    const className = parts[1].replace(/[^a-zA-Z0-9\-_]/g, ''); // ASCII only
     const styleString = parts.slice(2).join(' ');
     const styleTokens = styleString.split(';').map(token => token.trim()).filter(Boolean);
     const safeTokens = styleTokens.map(token => {
         const [key, value] = token.split(':').map(s => s.trim());
         if (!VALID_CSS_KEYS.has(key)) return '';
+        // Only allow ASCII in key/value
+        if (/[^\x20-\x7E]/.test(key) || /[^\x20-\x7E]/.test(value)) return '';
         // Color value
         if (key.includes('color') || key === 'fill' || key === 'stroke') {
             if (HEX_COLOR_REGEX.test(value)) return `${key}:${value}`;
@@ -590,7 +593,7 @@ function sanitizeClassDefLine(line) {
             return `${key}:${value}`;
         }
         // font-family, text-align, etc.
-        if (/^[\w\- ,]+$/.test(value)) return `${key}:${value}`;
+        if (/^[a-zA-Z0-9\- ,]+$/.test(value)) return `${key}:${value}`;
         return '';
     }).filter(Boolean);
     return `classDef ${className} ${safeTokens.join(';')}`;
@@ -856,7 +859,7 @@ async function generateConceptMap(input) {
  * @param {string} userId - The ID of the user who created the map
  * @returns {Promise<Object>} The saved concept map
  */
-async function saveConceptMap(conceptMap, userId) {
+async function saveConceptMap(conceptMap) {
     try {
         const response = await fetch('/api/board', {
             method: 'POST',
@@ -865,15 +868,12 @@ async function saveConceptMap(conceptMap, userId) {
             },
             body: JSON.stringify({
                 name: conceptMap.title || 'Untitled Concept Map',
-                content: conceptMap,
-                userId: userId
+                content: conceptMap
             }),
         });
-
         if (!response.ok) {
-            throw new Error('Failed to save concept map');
+            throw new Error(await response.text() || 'Failed to save concept map');
         }
-
         return await response.json();
     } catch (error) {
         console.error('Error saving concept map:', error);

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { generateConceptMap, saveConceptMap } from "@/services/conceptMapGenerator";
-import { useSession } from "next-auth/react";
+// Removed useSession import
 
 /**
  * FormNewBoard Component
@@ -18,13 +18,10 @@ import { useSession } from "next-auth/react";
  */
 const FormNewBoard = () => {
     const router = useRouter();
-    const { data: session, status } = useSession();
     const [text, setText] = useState("");
     const [isLoading, setIsLoading] = useState(false);
 
-    if (status === 'loading') {
-        return <div>Loading session...</div>;
-    }
+    // Removed session/status logic
 
     /**
      * Handles form submission:
@@ -42,18 +39,6 @@ const FormNewBoard = () => {
             return;
         }
 
-        // Espera a que la sesión esté cargando
-        if (status === 'loading') {
-            toast.loading("Checking session...");
-            return;
-        }
-
-        if (!session || !session.user || !session.user.id) {
-            toast.error("You must be logged in to create a concept map.");
-            setIsLoading(false);
-            return;
-        }
-
         setIsLoading(true);
 
         try {
@@ -62,14 +47,18 @@ const FormNewBoard = () => {
             console.log('Generated conceptMap:', conceptMap);
             // Validación robusta de sesión
             // Save the concept map
-            const saveResult = await saveConceptMap(conceptMap, session.user.id);
+            const saveResult = await saveConceptMap(conceptMap);
             console.log('Save result:', saveResult);
             setText("");
             toast.success("Concept map created successfully!");
             router.refresh();
         } catch (error) {
             const errorMessage = error.message || "Something went wrong";
-            toast.error(errorMessage);
+            if (error.message && error.message.toLowerCase().includes('unauthorized')) {
+                toast.error("You must be logged in to create a concept map.");
+            } else {
+                toast.error(errorMessage);
+            }
         } finally {
             setIsLoading(false);
         }
