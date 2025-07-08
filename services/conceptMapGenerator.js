@@ -1,10 +1,11 @@
-/**
+﻿/**
  * Concept Map Generator Service
  * Advanced concept map generation with deep reasoning, semantic enrichment,
  * and visual optimization using open-source tools and APIs.
  */
 
-const axios = require('axios');
+// Use ES module import
+import axios from 'axios';
 
 // DeepSeek API configuration
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || 'sk-96a7994b00d646809acf5e17fc63ce74';
@@ -87,22 +88,22 @@ function testSpecialCharacterHandling() {
         { input: 'François', expected: 'François', description: 'French with cedilla' },
         
         // Math symbols
-        { input: 'Δx = 5', expected: 'Δx = 5', description: 'Greek delta' },
-        { input: '∑ = sum', expected: '∑ = sum', description: 'Sigma symbol' },
-        { input: 'π ≈ 3.14', expected: 'π ≈ 3.14', description: 'Pi symbol' },
-        { input: 'α + β = γ', expected: 'α + β = γ', description: 'Greek letters' },
+        { input: '?x = 5', expected: '?x = 5', description: 'Greek delta' },
+        { input: 'S = sum', expected: 'S = sum', description: 'Sigma symbol' },
+        { input: 'p ~ 3.14', expected: 'p ~ 3.14', description: 'Pi symbol' },
+        { input: 'a + ß = ?', expected: 'a + ß = ?', description: 'Greek letters' },
         
         // Emojis
-        { input: '📈 Growth', expected: '📈 Growth', description: 'Chart emoji' },
-        { input: '🚀 Launch', expected: '🚀 Launch', description: 'Rocket emoji' },
-        { input: '💡 Idea', expected: '💡 Idea', description: 'Lightbulb emoji' },
-        { input: '🎯 Target', expected: '🎯 Target', description: 'Target emoji' },
+        { input: '?? Growth', expected: '?? Growth', description: 'Chart emoji' },
+        { input: '?? Launch', expected: '?? Launch', description: 'Rocket emoji' },
+        { input: '?? Idea', expected: '?? Idea', description: 'Lightbulb emoji' },
+        { input: '?? Target', expected: '?? Target', description: 'Target emoji' },
         
         // Special symbols
         { input: '© 2024', expected: '© 2024', description: 'Copyright symbol' },
-        { input: '™ Brand', expected: '™ Brand', description: 'Trademark symbol' },
+        { input: 'T Brand', expected: 'T Brand', description: 'Trademark symbol' },
         { input: '® Registered', expected: '® Registered', description: 'Registered symbol' },
-        { input: '€ 100', expected: '€ 100', description: 'Euro symbol' },
+        { input: '? 100', expected: '? 100', description: 'Euro symbol' },
         { input: '£ 50', expected: '£ 50', description: 'Pound symbol' },
         { input: '¥ 1000', expected: '¥ 1000', description: 'Yen symbol' },
         
@@ -121,8 +122,8 @@ function testSpecialCharacterHandling() {
         { input: 'Node &lt;html&gt;', expected: 'Node (html)', description: 'HTML tag entities' },
         
         // Mixed content
-        { input: 'José 📈 [Growth] "2024"', expected: 'José 📈 (Growth) \\"2024\\"', description: 'Mixed special characters' },
-        { input: 'Δx = ∑[i=1 to n] x_i', expected: 'Δx = ∑(i=1 to n) x_i', description: 'Math with brackets' },
+        { input: 'José ?? [Growth] "2024"', expected: 'José ?? (Growth) \\"2024\\"', description: 'Mixed special characters' },
+        { input: '?x = S[i=1 to n] x_i', expected: '?x = S(i=1 to n) x_i', description: 'Math with brackets' },
     ];
     
     const results = {
@@ -258,9 +259,9 @@ async function analyzeWithDeepSeek(text) {
 
         const systemPrompt = `You are an expert at creating sophisticated, semantically precise concept maps for a modern SaaS application. Your task is to transform complex knowledge into clear, elegant visualizations that maintain semantic accuracy while being visually appealing.
 
-🎯 **CORE REQUIREMENTS (MUST-DO for each generated concept map):**
+?? **CORE REQUIREMENTS (MUST-DO for each generated concept map):**
 
-1.  ✅ **Enhanced Semantic Precision (+200% improvement)**:
+1.  ? **Enhanced Semantic Precision (+200% improvement)**:
     - **Structured Relationship Vocabulary**: Use ONLY these precise relationship types for connections:
       * Causal: "causes", "leads to", "results in", "triggers", "enables"
       * Hierarchical: "contains", "includes", "comprises", "consists of", "is part of"
@@ -273,7 +274,7 @@ async function analyzeWithDeepSeek(text) {
       * Level 2 (sub): Supporting concepts (4-8 nodes) 
       * Level 3 (detail): Specific examples/details (6-12 nodes)
     - **Semantic Validation**: Every connection must pass these tests:
-      * Directional logic: A → B must mean "A affects/creates/includes B"
+      * Directional logic: A  B must mean "A affects/creates/includes B"
       * Non-circular: No loops in the relationship chain
       * Non-redundant: No duplicate relationships between same nodes
       * Contextual relevance: Relationships must be domain-specific, not generic
@@ -281,29 +282,29 @@ async function analyzeWithDeepSeek(text) {
     - For normal-length inputs, preserve all key details, facts, and relationships from the user's text.
     - **Semantic Depth**: Each concept must connect to at least 2 other concepts when possible, creating a rich network.
 
-2.  ✅ **Rich Content Structure**:
+2.  ? **Rich Content Structure**:
     - Each node MUST contain a rich, multi-sentence paragraph (3-6 sentences) or well-structured bullet points, with as much detail as possible from the user's input.
     - Include specific examples, dates, and contextual information.
     - Use proper paragraph structure with clear topic sentences.
-    - For the central concept within a node's 'text' field, always ensure it is in <strong>bold</strong> and has a line break (<br>) separating it from the detailed explanation. For example: "🎤 <strong>MAIN IDEA</strong><br><small>Detailed paragraph with specific examples and context.</small>".
+    - For the central concept within a node's 'text' field, always ensure it is in <strong>bold</strong> and has a line break (<br>) separating it from the detailed explanation. For example: "?? <strong>MAIN IDEA</strong><br><small>Detailed paragraph with specific examples and context.</small>".
     - Use bullet points (<br>- ) for related sub-elements or lists within the 'definition' field when relevant.
     - **Do NOT shorten or omit any information from the user's input.**
 
-3.  ✅ **Visual Elegance & Thematic Styling**:
+3.  ? **Visual Elegance & Thematic Styling**:
     - Use exactly ONE emoji per node (only at the start).
     - Apply HTML tags for styling: <strong> for main concepts, <small> for detailed paragraphs, <u> for key examples, and <em> for other necessary emphasis (e.g., italics).
     - Ensure clean, modern SaaS aesthetics that mimic the attached visual style example (pastel colors, slightly sketchy border look). You will also provide a 'class' property for each node to enable this styling.
-    - Format: "🎤 <strong>CONCEPT</strong><br><small>Rich paragraph content</small>".
+    - Format: "?? <strong>CONCEPT</strong><br><small>Rich paragraph content</small>".
     - Use <br> for bullet points.
     - No visual clutter or unnecessary cross-connections.
 
-4.  ✅ **Language and Formatting**:
+4.  ? **Language and Formatting**:
     - ALL content in ${language === 'es' ? 'Spanish' : 'English'}.
     - Use <br> for proper line breaks (ABSOLUTELY NO \n or \n\n for newlines within the JSON string values. ONLY AND ALWAYS USE <br> FOR NEWLINES.).
     - Ensure proper visual spacing within nodes by strategically using <br> for line breaks and content separation.
     - No raw Markdown (e.g., **bold**, _underline_) or special characters that are not part of HTML tags or emojis.
 
-5.  ✅ **Semantic Relationship Mapping**:
+5.  ? **Semantic Relationship Mapping**:
     - **Primary Relationships**: Each main concept should connect to 2-3 sub-concepts
     - **Secondary Relationships**: Each sub-concept should connect to 1-2 detail concepts
     - **Cross-Connections**: Allow meaningful cross-connections between related concepts at the same level
@@ -326,7 +327,7 @@ Your response MUST be a JSON array of objects, and ONLY the JSON array. Each obj
 Example of a semantically precise concept in ${language === 'es' ? 'Spanish' : 'English'}:
 {
   "id": "concept1",
-  "text": "${language === 'es' ? '🎤 <strong>Luis Alberto Spinetta</strong><br><small>Músico y poeta argentino (1950–2012), pionero del rock en español. Su obra mezcla poesía, filosofía y experimentación sonora.</small>' : '🎤 <strong>Luis Alberto Spinetta</strong><br><small>Argentine musician and poet (1950–2012), pioneer of Spanish-language rock. His work blends poetry, philosophy, and sonic experimentation.</small>'}",
+  "text": "${language === 'es' ? '?? <strong>Luis Alberto Spinetta</strong><br><small>Músico y poeta argentino (1950-2012), pionero del rock en español. Su obra mezcla poesía, filosofía y experimentación sonora.</small>' : '?? <strong>Luis Alberto Spinetta</strong><br><small>Argentine musician and poet (1950-2012), pioneer of Spanish-language rock. His work blends poetry, philosophy, and sonic experimentation.</small>'}",
   "type": "main",
   "definition": "${language === 'es' ? 'Fundador del rock argentino y pionero del rock progresivo. Su obra se caracteriza por una profunda exploración lírica y musical, fusionando elementos de la poesía surrealista con innovaciones sonoras:<br>- <u>Nacido en</u> 1950 en Buenos Aires<br>- <u>Formó</u> la banda Almendra en 1967<br>- <u>Influenciado por</u> la poesía de Rimbaud y el surrealismo<br>- <u>Compuso</u> más de 400 canciones que fusionan rock con poesía<br>- <u>Ejemplo:</u> \'Muchacha ojos de papel\'(1969), una obra maestra de la lírica rockera' : 'Founder of Argentine rock and pioneer of progressive rock. His work is characterized by deep lyrical and musical exploration, fusing elements of surrealist poetry with sonic innovations:<br>- <u>Born in</u> 1950 in Buenos Aires<br>- <u>Formed</u> the band Almendra in 1967<br>- <u>Influenced by</u> Rimbaud\'s poetry and surrealism<br>- <u>Composed</u> over 400 songs that fuse rock with poetry<br>- <u>Example:</u> \'Muchacha ojos de papel\'(1969), a masterpiece of rock lyrics'}",
   "connections": [
@@ -566,6 +567,23 @@ function sanitizeMermaidId(id) {
     return safe;
 }
 
+// Función para limpiar ligaduras y caracteres Unicode sospechosos en estilos Mermaid
+function cleanMermaidStyle(style) {
+    // Reemplaza ligaduras y símbolos Unicode comunes por ASCII
+    return style
+        .replace(/[\uFB00-\uFFFF]/g, '') // Elimina ligaduras y símbolos raros
+        .replace(/：/g, ':') // Dos puntos fullwidth
+        .replace(/；/g, ';') // Punto y coma fullwidth
+        .replace(/，/g, ',') // Coma fullwidth
+        .replace(/。/g, '.') // Punto fullwidth
+        .replace(/（/g, '(') // Paréntesis fullwidth
+        .replace(/）/g, ')') // Paréntesis fullwidth
+        .replace(/–/g, '-') // Guion largo
+        .replace(/—/g, '-') // Guion em dash
+        .replace(/“|”/g, '"') // Comillas
+        .replace(/’|‘/g, "'"); // Comillas simples
+}
+
 // PATCH: Enhanced validateMermaidDiagram
 function validateMermaidDiagram(diagram) {
     if (!diagram || typeof diagram !== 'string') {
@@ -648,24 +666,16 @@ function validateMermaidDiagram(diagram) {
         }
         // classDef
         if (trimmedLine.startsWith('classDef')) {
-            const classDefMatch = trimmedLine.match(/^classDef\s+(\w+)\s+(.+)$/);
+            const classDefMatch = trimmedLine.match(/^classDef\s+([a-zA-Z][a-zA-Z0-9_-]*)\s+(.+)$/);
             if (!classDefMatch) {
                 errorDetails.push(`Line ${lineNum}: Invalid classDef syntax: ${trimmedLine}`);
             } else {
                 const className = classDefMatch[1];
-                let styles = classDefMatch[2];
-                if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(className)) {
-                    errorDetails.push(`Line ${lineNum}: Invalid class name "${className}"`);
+                const styles = classDefMatch[2];
+                // Solo verifica que haya al menos una propiedad tipo key:value
+                if (!/([a-zA-Z-]+:[^;]+;?)+/.test(styles)) {
+                    errorDetails.push(`Line ${lineNum}: Invalid style properties in classDef: ${styles}`);
                 }
-                // PATCH: auto-correct malformed style properties
-                styles = styles.split(',').map(prop => {
-                    const [key, value] = prop.split(':').map(s => s.trim());
-                    if (!key || !value) {
-                        errorDetails.push(`Line ${lineNum}: Invalid style property "${prop}" in classDef`);
-                        return null;
-                    }
-                    return `${key}:${value}`;
-                }).filter(Boolean).join(',');
             }
             return;
         }
@@ -736,14 +746,43 @@ function createMermaidDiagram(concepts, inputText = '') {
             }
         }
         lines.push('');
-        lines.push('classDef accent fill:#e0e7ff,stroke:#6366f1,stroke-width:2.5px,color:#222,rx:22px,ry:22px,font-weight:bold');
-        lines.push('classDef pastel-blue fill:#dbeafe,stroke:#60a5fa,stroke-width:2px,color:#222,rx:18px,ry:18px');
-        lines.push('classDef pastel-green fill:#d1fae5,stroke:#34d399,stroke-width:2px,color:#222,rx:18px,ry:18px');
-        lines.push('classDef pastel-pink fill:#fce7f3,stroke:#f472b6,stroke-width:2px,color:#222,rx:18px,ry:18px');
+        // Genera las líneas classDef Mermaid carácter por carácter (ASCII puro)
+        const classDefAccent = [
+            'c','l','a','s','s','D','e','f',' ','a','c','c','e','n','t',' ',
+            'f','i','l','l',':','#','e','0','e','7','f','f',';','s','t','r','o','k','e',':','#','6','3','6','6','f','1',';','s','t','r','o','k','e','-','w','i','d','t','h',':','2','.','5','p','x',';','c','o','l','o','r',':','#','2','2','2',';','r','x',':','2','2','p','x',';','r','y',':','2','2','p','x',';','f','o','n','t','-','w','e','i','g','h','t',':','b','o','l','d'
+        ].join('');
+        const classDefBlue = [
+            'c','l','a','s','s','D','e','f',' ','p','a','s','t','e','l','-','b','l','u','e',' ',
+            'f','i','l','l',':','#','d','b','e','a','f','e',';','s','t','r','o','k','e',':','#','6','0','a','5','f','a',';','s','t','r','o','k','e','-','w','i','d','t','h',':','2','p','x',';','c','o','l','o','r',':','#','2','2','2',';','r','x',':','1','8','p','x',';','r','y',':','1','8','p','x'
+        ].join('');
+        const classDefGreen = [
+            'c','l','a','s','s','D','e','f',' ','p','a','s','t','e','l','-','g','r','e','e','n',' ',
+            'f','i','l','l',':','#','d','1','f','a','e','5',';','s','t','r','o','k','e',':','#','3','4','d','3','9','9',';','s','t','r','o','k','e','-','w','i','d','t','h',':','2','p','x',';','c','o','l','o','r',':','#','2','2','2',';','r','x',':','1','8','p','x',';','r','y',':','1','8','p','x'
+        ].join('');
+        const classDefPink = [
+            'c','l','a','s','s','D','e','f',' ','p','a','s','t','e','l','-','p','i','n','k',' ',
+            'f','i','l','l',':','#','f','c','e','7','f','3',';','s','t','r','o','k','e',':','#','f','4','7','2','b','6',';','s','t','r','o','k','e','-','w','i','d','t','h',':','2','p','x',';','c','o','l','o','r',':','#','2','2','2',';','r','x',':','1','8','p','x',';','r','y',':','1','8','p','x'
+        ].join('');
+        // Imprime en consola para depuración
+        if (typeof window !== 'undefined') {
+            console.log('[MermaidClassDef] accent:', classDefAccent);
+            console.log('[MermaidClassDef] pastel-blue:', classDefBlue);
+            console.log('[MermaidClassDef] pastel-green:', classDefGreen);
+            console.log('[MermaidClassDef] pastel-pink:', classDefPink);
+        }
+        lines.push(classDefAccent);
+        lines.push(classDefBlue);
+        lines.push(classDefGreen);
+        lines.push(classDefPink);
     const diagram = lines.join('\n');
+    // Depuración: imprime el Mermaid generado completo
+    if (typeof window !== 'undefined') {
+        console.log('[MermaidDiagram] Mermaid generado completo:\n' + diagram);
+        window.lastMermaid = diagram;
+    }
     const validation = validateMermaidDiagram(diagram);
     if (!validation.valid) {
-            return `graph TD\nErrorNode["⚠️ Could not render due to syntax issues: ${validation.error}"]`;
+            return `graph TD\nErrorNode["?? Could not render due to syntax issues: ${validation.error}"]`;
     }
         if (validation.corrected) {
             // Log warning and return corrected diagram
@@ -885,12 +924,12 @@ async function saveConceptMap(conceptMap, userId) {
     }
 } 
 
-module.exports = {
+export {
   sanitizeMermaidText,
   testSpecialCharacterHandling,
   preprocessDiagram,
   validateMermaidDiagram,
   createMermaidDiagram,
   generateConceptMap,
-  // add any other exported functions as needed
+  saveConceptMap,
 }; 

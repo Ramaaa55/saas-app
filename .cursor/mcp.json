@@ -4,9 +4,9 @@
       "command": "node ../mcp_sentry_server/local-mcp-server.js",
       "auth": {
         "type": "token",
-        "token": "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"
+        "token": "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"
       },
-      "project": "ClariMap"
+      "project": "clarimap-cool-proyect"
     }
   }
 }

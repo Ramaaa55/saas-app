@@ -15,6 +15,11 @@ function MermaidRenderer({ diagram, onNodeClick, selectedNodeId, onNodeDoubleCli
         let isMounted = true;
         setIsRendering(true);
 
+        // Log del diagrama Mermaid recibido en el cliente
+        if (typeof window !== 'undefined') {
+            console.log('[MermaidDiagram][CLIENT] Mermaid recibido:', diagram);
+            window.lastMermaid = diagram;
+        }
         mermaid.render('concept-map', diagram)
             .then(({ svg }) => {
                 if (isMounted && hostRef.current) {
