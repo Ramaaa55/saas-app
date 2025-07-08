@@ -3,7 +3,7 @@
  * Run with: node services/conceptMapGenerator.test.js
  */
 
-import { sanitizeMermaidText, testSpecialCharacterHandling, createMermaidDiagram } from './conceptMapGenerator.js';
+const { sanitizeMermaidText, testSpecialCharacterHandling, createMermaidDiagram } = require('./conceptMapGenerator.js');
 
 // Mock console methods for testing
 const originalConsole = { ...console };
@@ -278,6 +278,39 @@ function testComprehensiveDiagramGeneration() {
         }
     ];
     
+    // Add more edge cases for special characters and multiline
+    const extraEdgeCases = [
+        {
+            name: 'Emoji and accents',
+            concepts: [
+                { id: 'A', text: '🎨 Van Gogh "producción"', type: 'main', connections: [{ targetId: 'B', label: 'influye en' }] },
+                { id: 'B', text: '🛏️ Psiquiátricos', type: 'sub', connections: [] }
+            ]
+        },
+        {
+            name: 'Quotes and parentheses',
+            concepts: [
+                { id: 'A', text: 'Node with "quotes" and (parentheses)', type: 'main', connections: [{ targetId: 'B', label: 'relates to' }] },
+                { id: 'B', text: 'Node (with) [brackets]', type: 'sub', connections: [] }
+            ]
+        },
+        {
+            name: 'Multiline and complex',
+            concepts: [
+                { id: 'A', text: 'Line1\nLine2\nLine3', type: 'main', connections: [{ targetId: 'B', label: 'spans' }] },
+                { id: 'B', text: 'Complex: "Δx = 5" & emojis 🚀', type: 'sub', connections: [] }
+            ]
+        },
+        {
+            name: 'Invalid node/edge (should auto-correct)',
+            concepts: [
+                { id: 'A', text: '', type: 'main', connections: [{ targetId: 'B', label: '' }] },
+                { id: 'B', text: 'Valid', type: 'sub', connections: [] }
+            ]
+        }
+    ];
+    testScenarios.push(...extraEdgeCases);
+    
     let allPassed = true;
     
     testScenarios.forEach((scenario, index) => {
@@ -399,8 +432,8 @@ function runAllTests() {
     return allPassed;
 }
 
-// Export for use in other files
-export { testSanitizeMermaidText, testConceptMapGeneration, testMermaidSyntaxValidation, testComprehensiveDiagramGeneration, testErrorHandling, runAllTests };
+// Replace ES module export with CommonJS module.exports
+module.exports = { testSanitizeMermaidText, testConceptMapGeneration, testMermaidSyntaxValidation, testComprehensiveDiagramGeneration, testErrorHandling, runAllTests };
 
 // Run tests if this file is executed directly
 if (typeof window === 'undefined' && typeof process !== 'undefined') {
