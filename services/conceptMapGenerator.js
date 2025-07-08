@@ -4,7 +4,7 @@
  * and visual optimization using open-source tools and APIs.
  */
 
-import axios from 'axios';
+const axios = require('axios');
 
 // DeepSeek API configuration
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || 'sk-96a7994b00d646809acf5e17fc63ce74';
@@ -25,66 +25,50 @@ const ENGLISH_DICTIONARY = new Set([
  * @param {string} text - Input text that may contain special characters, accents, symbols, emojis
  * @returns {string} Mermaid-safe text that preserves the original meaning
  */
-export function sanitizeMermaidText(text) {
+function sanitizeMermaidText(text) {
     if (!text || typeof text !== 'string') return '';
-    
     let result = text;
+    let original = result;
+    let modified = false;
     
     // Step 1: Normalize Unicode characters (combines combining characters)
     result = result.normalize('NFC');
     
-    // Step 2: Handle HTML entities and tags
-    result = result
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .replace(/&nbsp;/g, ' ');
+    // Step 2: Replace newlines with spaces (Mermaid does not support raw newlines in labels)
+    if (/\r|\n/.test(result)) {
+        result = result.replace(/\r\n|\r|\n/g, ' ');
+        modified = true;
+    }
+
+    // Step 3: Escape backslashes and double quotes (Mermaid requires these to be escaped)
+    let before = result;
+    result = result.replace(/\\/g, '\\\\'); // Escape backslashes
+    if (result !== before) modified = true;
+    before = result;
+    result = result.replace(/"/g, '\\"'); // Escape double quotes
+    if (result !== before) modified = true;
     
-    // Step 3: Handle newlines and whitespace
-    result = result
-        .replace(/\r\n|\r|\n/g, ' ') // Convert all newlines to spaces
-        .replace(/\s+/g, ' ') // Normalize multiple spaces
-        .trim();
-    
-    // Step 4: Handle Mermaid syntax conflicts
-    result = result
-        // Escape quotes properly for Mermaid node syntax
-        .replace(/"/g, '\\"')
-        // Escape backslashes
-        .replace(/\\/g, '\\\\')
-        // Replace problematic characters that break Mermaid syntax
-        .replace(/[\[\]{}]/g, (match) => {
-            switch(match) {
-                case '[': return '(';
-                case ']': return ')';
-                case '{': return '(';
-                case '}': return ')';
-                default: return match;
-            }
-        })
-        // Replace pipe character (used in Mermaid for subgraphs)
-        .replace(/\|/g, 'I')
-        // Replace angle brackets
-        .replace(/[<>]/g, (match) => match === '<' ? '(' : ')')
-        // Replace other problematic characters
-        .replace(/[`~!@#$%^&*+=|\\:;'",.?]/g, (match) => {
-            // Keep some punctuation but escape others
-            if (['.', ',', '!', '?', ':', ';'].includes(match)) {
-                return match; // Keep these
-            }
-            return ' '; // Replace others with space
-        });
-    
-    // Step 5: Remove control characters except tab
+    // Step 4: Remove control characters except tab
+    before = result;
     result = result.replace(/[\x00-\x08\x0B-\x1F\x7F]/g, '');
+    if (result !== before) modified = true;
     
-    // Step 6: Ensure the result is not empty and has reasonable length
+    // Step 5: Ensure the result is not empty and has reasonable length
     if (!result.trim()) {
         result = 'Content';
+        modified = true;
     } else if (result.length > 200) {
         result = result.substring(0, 197) + '...';
+        modified = true;
+    }
+
+    // Step 6: Log if any modification was made
+    if (modified && typeof window !== 'undefined') {
+        // Browser log
+        console.warn('[MermaidSanitize] Modified label:', { original, sanitized: result });
+    } else if (modified) {
+        // Node log
+        console.warn('[MermaidSanitize] Modified label:', { original, sanitized: result });
     }
     
     return result.trim();
@@ -94,7 +78,7 @@ export function sanitizeMermaidText(text) {
  * Test suite for special character handling
  * @returns {Object} Test results
  */
-export function testSpecialCharacterHandling() {
+function testSpecialCharacterHandling() {
     const testCases = [
         // Accented characters
         { input: 'José María', expected: 'José María', description: 'Spanish accented names' },
@@ -560,7 +544,7 @@ function levenshtein(a, b) {
  * @param {Array} concepts
  * @returns {Array} sanitized concepts
  */
-export function preprocessDiagram(concepts) {
+function preprocessDiagram(concepts) {
     if (!Array.isArray(concepts)) return [];
     return concepts.map(concept => ({
         ...concept,
@@ -583,12 +567,14 @@ function sanitizeMermaidId(id) {
 }
 
 // PATCH: Enhanced validateMermaidDiagram
-export function validateMermaidDiagram(diagram) {
+function validateMermaidDiagram(diagram) {
     if (!diagram || typeof diagram !== 'string') {
         return { valid: false, error: 'Empty diagram' };
     }
     const lines = diagram.split('\n');
     let errorDetails = [];
+    let autoCorrected = false;
+    let correctedLines = [...lines];
     // Check first line for proper graph declaration
     if (lines.length === 0 || !lines[0].trim().startsWith('graph')) {
         return { valid: false, error: 'Missing or invalid graph declaration. Must start with "graph TD"' };
@@ -596,7 +582,6 @@ export function validateMermaidDiagram(diagram) {
     if (/ErrorNode/.test(diagram)) {
         return { valid: false, error: 'Error node present in diagram' };
     }
-    // Track if inside a valid node/edge/classDef
     lines.forEach((line, idx) => {
         const lineNum = idx + 1;
         const trimmedLine = line.trim();
@@ -606,6 +591,10 @@ export function validateMermaidDiagram(diagram) {
             const nodeMatch = trimmedLine.match(/^(\w+)\["([^\"]*)"\]/);
             if (!nodeMatch) {
                 errorDetails.push(`Line ${lineNum}: Invalid node definition syntax: ${trimmedLine}`);
+                // Attempt auto-correction: remove problematic characters and re-wrap
+                let safe = trimmedLine.replace(/\[.*\]/, '["Content"]');
+                correctedLines[idx] = safe;
+                autoCorrected = true;
             } else {
                 const nodeId = nodeMatch[1];
                 const nodeText = nodeMatch[2];
@@ -614,9 +603,13 @@ export function validateMermaidDiagram(diagram) {
                 }
                 if (!nodeText.trim()) {
                     errorDetails.push(`Line ${lineNum}: Empty node text`);
+                    correctedLines[idx] = `${nodeId}["Content"]`;
+                    autoCorrected = true;
                 }
                 if (nodeText.includes('"') && !nodeText.includes('\\"')) {
                     errorDetails.push(`Line ${lineNum}: Unescaped quote in node text: ${nodeText}`);
+                    correctedLines[idx] = `${nodeId}["${nodeText.replace(/"/g, '\\"')}"]`;
+                    autoCorrected = true;
                 }
             }
             return;
@@ -626,6 +619,10 @@ export function validateMermaidDiagram(diagram) {
             const edgeMatch = trimmedLine.match(/^(\w+)\s*-->\s*\|"([^\"]*)"\|\s*(\w+)$/);
             if (!edgeMatch) {
                 errorDetails.push(`Line ${lineNum}: Invalid edge definition syntax: ${trimmedLine}`);
+                // Attempt auto-correction: fallback to relates to
+                let safe = trimmedLine.replace(/\|".*"\|/, '|"relates to"|');
+                correctedLines[idx] = safe;
+                autoCorrected = true;
             } else {
                 const fromId = edgeMatch[1];
                 const label = edgeMatch[2];
@@ -638,9 +635,13 @@ export function validateMermaidDiagram(diagram) {
                 }
                 if (!label.trim()) {
                     errorDetails.push(`Line ${lineNum}: Empty edge label`);
+                    correctedLines[idx] = `${fromId} -->|"relates to"| ${toId}`;
+                    autoCorrected = true;
                 }
                 if (label.includes('"') && !label.includes('\\"')) {
                     errorDetails.push(`Line ${lineNum}: Unescaped quote in edge label: ${label}`);
+                    correctedLines[idx] = `${fromId} -->|"${label.replace(/"/g, '\\"')}"| ${toId}`;
+                    autoCorrected = true;
                 }
             }
             return;
@@ -674,6 +675,11 @@ export function validateMermaidDiagram(diagram) {
         }
     });
     if (errorDetails.length > 0) {
+        if (autoCorrected) {
+            // Return corrected diagram and log
+            console.warn('[MermaidValidate] Auto-corrected diagram:', { errorDetails, corrected: correctedLines.join('\n') });
+            return { valid: true, corrected: correctedLines.join('\n'), warning: errorDetails };
+        }
         return {
             valid: false,
             error: `Syntax issues: ${errorDetails.slice(0, 3).join(', ')}${errorDetails.length > 3 ? '...' : ''}`,
@@ -684,7 +690,7 @@ export function validateMermaidDiagram(diagram) {
 }
 
 // PATCH: Use sanitizeMermaidId for all node/edge IDs, and sanitizeMermaidText for all labels
-export function createMermaidDiagram(concepts, inputText = '') {
+function createMermaidDiagram(concepts, inputText = '') {
     const sanitizedConcepts = preprocessDiagram(concepts);
     if (!Array.isArray(sanitizedConcepts) || !sanitizedConcepts.every(c => typeof c === 'object' && c !== null && 'id' in c && 'text' in c)) {
         return 'graph TD\nErrorNode["Malformed concept data: expected array of concept objects"]';
@@ -739,6 +745,11 @@ export function createMermaidDiagram(concepts, inputText = '') {
     if (!validation.valid) {
             return `graph TD\nErrorNode["⚠️ Could not render due to syntax issues: ${validation.error}"]`;
     }
+        if (validation.corrected) {
+            // Log warning and return corrected diagram
+            console.warn('[MermaidDiagram] Auto-corrected diagram used:', { warning: validation.warning, corrected: validation.corrected });
+            return validation.corrected;
+        }
         return diagram;
   } catch (error) {
     return 'graph TD\nErrorNode["Error creating diagram"]';
@@ -750,7 +761,7 @@ export function createMermaidDiagram(concepts, inputText = '') {
  * @param {string} input - The raw user input text.
  * @returns {Promise<Object>} - The generated concept map object.
  */
-export async function generateConceptMap(input) {
+async function generateConceptMap(input) {
     try {
         // Get key concepts (nouns and noun phrases)
         // const keyConcepts = doc.nouns().out('array'); // Removed unused line
@@ -849,7 +860,7 @@ export async function generateConceptMap(input) {
  * @param {string} userId - The ID of the user who created the map
  * @returns {Promise<Object>} The saved concept map
  */
-export async function saveConceptMap(conceptMap, userId) {
+async function saveConceptMap(conceptMap, userId) {
     try {
         const response = await fetch('/api/board', {
             method: 'POST',
@@ -873,3 +884,13 @@ export async function saveConceptMap(conceptMap, userId) {
         throw new Error('Failed to save concept map');
     }
 } 
+
+module.exports = {
+  sanitizeMermaidText,
+  testSpecialCharacterHandling,
+  preprocessDiagram,
+  validateMermaidDiagram,
+  createMermaidDiagram,
+  generateConceptMap,
+  // add any other exported functions as needed
+}; 
